@@ -73,7 +73,7 @@ class InstanceDescriptor:
    parse the job script to get the account information, node type (constraint) and walltime
 '''
 def parse_script(filename):
-    jobname = ""
+    jobname = "my-run"
     account = ""
     constraint = ""
     walltime = ""

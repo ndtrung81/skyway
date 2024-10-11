@@ -449,6 +449,31 @@ class AZURE(Cloud):
 
         return accumulating_cost, remaining_balance
 
+    def get_usage_history_from_db(self, user_name):
+        '''
+        compute the accumulating cost from the pkl database
+        and the remaining balance
+        '''
+        if user_name not in self.users:
+            raise Exception(f"{user_name} is not listed in the user group of this account.")
+                
+        user_budget = self.users[user_name]['budget']
+
+        if not os.path.isfile(self.usage_history):
+            print(f"Usage history {self.usage_history} is not available")
+            data = [user_name, "--", "--", "00:00:00", "00:00:00", "0.0", user_budget]
+            df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            #df = pd.DataFrame(columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+            df.to_pickle(self.usage_history)
+            return 0, user_budget
+
+        df = pd.read_pickle(self.usage_history)
+        df_user = df.loc[df['User'] == user_name]
+        
+        history = df_user[['User','InstanceID','InstanceType','Start','End']]
+        return history
+
     def get_node_types(self):
         """
         List all the node (instance) types provided by the vendor and their unit prices

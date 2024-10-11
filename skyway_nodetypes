@@ -75,7 +75,7 @@ if __name__ == "__main__":
 
     job_name = args.jobname
     account_name = args.account
-    provider = args.provider.lower()
+    provider = ""
     
     if provider == "":
         # try to infer the vendor name from account

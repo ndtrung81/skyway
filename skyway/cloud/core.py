@@ -66,6 +66,12 @@ class Cloud():
         remaining_balance = 0
         return accumulating_cost, remaining_balance
 
+    def get_usage_history_from_db(self, user_name):
+        '''
+        return the list of jobs/instances
+        '''
+        pass
+
     # instance operations
 
     def list_nodes(self, show_protected_nodes=False, verbose=False):

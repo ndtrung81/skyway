@@ -233,7 +233,7 @@ class OCI(Cloud):
         # need to install nfs-utils on the VM (or having an image that has nfs-utils installed)
         print(f"To connect to the instance, run:")
         cmd = f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip} or"
-        print(f"  skyway_connect --account={self.account_name} {instance.display_name}")
+        print(f"  skyway_connect --account={self.account_name} -J {instance.display_name}")
         print(f"{cmd}")
         cmd += f" -t 'sudo shutdown -P {walltime_in_minutes}'; bash "
         #cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mount -t nfs {io_server}:/software /software' "
@@ -250,7 +250,7 @@ class OCI(Cloud):
         username = "opc"
         
         if separate_terminal == True:
-            cmd = "gnome-terminal --title='Connecting to the node' -- bash -c "
+            cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
             cmd += f" 'ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip}' "
         else:
             cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip}"
@@ -379,6 +379,31 @@ class OCI(Cloud):
         remaining_balance = float(user_budget) - float(accumulating_cost)
 
         return accumulating_cost, remaining_balance
+
+    def get_usage_history_from_db(self, user_name):
+        '''
+        compute the accumulating cost from the pkl database
+        and the remaining balance
+        '''
+        if user_name not in self.users:
+            raise Exception(f"{user_name} is not listed in the user group of this account.")
+                
+        user_budget = self.users[user_name]['budget']
+
+        if not os.path.isfile(self.usage_history):
+            print(f"Usage history {self.usage_history} is not available")
+            data = [user_name, "--", "--", "00:00:00", "00:00:00", "0.0", user_budget]
+            df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            #df = pd.DataFrame(columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+            df.to_pickle(self.usage_history)
+            return 0, user_budget
+
+        df = pd.read_pickle(self.usage_history)
+        df_user = df.loc[df['User'] == user_name]
+        
+        history = df_user[['User','InstanceID','InstanceType','Start','End']]
+        return history
 
     def get_budget_api(self):
         '''

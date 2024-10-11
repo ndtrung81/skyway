@@ -137,6 +137,31 @@ class GCP(Cloud):
 
         return accumulating_cost, remaining_balance
 
+    def get_usage_history_from_db(self, user_name):
+        '''
+        compute the accumulating cost from the pkl database
+        and the remaining balance
+        '''
+        if user_name not in self.users:
+            raise Exception(f"{user_name} is not listed in the user group of this account.")
+                
+        user_budget = self.users[user_name]['budget']
+
+        if not os.path.isfile(self.usage_history):
+            print(f"Usage history {self.usage_history} is not available")
+            data = [user_name, "--", "--", "00:00:00", "00:00:00", "0.0", user_budget]
+            df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            #df = pd.DataFrame(columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+            df.to_pickle(self.usage_history)
+            return 0, user_budget
+
+        df = pd.read_pickle(self.usage_history)
+        df_user = df.loc[df['User'] == user_name]
+        
+        history = df_user[['User','InstanceID','InstanceType','Start','End']]
+        return history
+
     def get_node_types(self):
         """
         List all the node (instance) types provided by the vendor and their unit prices
@@ -327,7 +352,7 @@ class GCP(Cloud):
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
             print("To connect to the instance, run:")
             print(f"  ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} or")
-            print(f"  skyway_connect --account={self.account_name} {node.name}")
+            print(f"  skyway_connect --account={self.account_name} -J {node.name}")
         
         return nodes
 
@@ -358,7 +383,7 @@ class GCP(Cloud):
             print("Connecting to host: " + public_ip)
 
             if separate_terminal == True:
-                cmd = "gnome-terminal --title='Connecting to the node' -- bash -c "
+                cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
                 cmd += f" 'ssh -o StrictHostKeyChecking=accept-new {username}@{public_ip}' "
             else:
                 cmd = f"ssh -o StrictHostKeyChecking=accept-new {username}@{public_ip}"

@@ -11,6 +11,7 @@ import skyway
 from skyway.cloud.aws import *
 from skyway.cloud.gcp import *
 from skyway.cloud.azure import *
+from skyway.cloud.oci import *
 from skyway.cloud.slurm import *
 
 import os
@@ -39,6 +40,8 @@ class InstanceDescriptor:
             self.account = GCP(account_name)
         elif 'azure' in vendor_name:
             self.account = AZURE(account_name)
+        elif 'oci' in vendor_name:
+            self.account = OCI(account_name)
         elif 'midway3' in vendor_name:
             self.account = SLURMCluster(account_name)
 
@@ -67,6 +70,10 @@ class InstanceDescriptor:
             self.account.connect_node(instanceID)
 
         elif "gcp" in self.vendor_name:
+            instanceID = self.account.get_instance_ID(self.jobname)
+            self.account.connect_node(instanceID)
+
+        elif "oci" in self.vendor_name:
             instanceID = self.account.get_instance_ID(self.jobname)
             self.account.connect_node(instanceID)
 
@@ -122,7 +129,7 @@ if __name__ == "__main__":
         st.markdown("#### Requested resources")
         job_name = st.text_input(r"$\textsf{\large Job name}$", "your-run")
         
-        vendor = st.selectbox(r"$\textsf{\large Service provider}$", ('Amazon Web Services (AWS)', 'Google Cloud Platform (GCP)', 'Microsoft Azure', 'RCC Midway3'), help='Cloud vendors or on-premise clusters')
+        vendor = st.selectbox(r"$\textsf{\large Service provider}$", ('Amazon Web Services (AWS)', 'Google Cloud Platform (GCP)', 'Microsoft Azure', 'Oracle Cloud Infrastructure (OCI)', 'RCC Midway3'), help='Cloud vendors or on-premise clusters')
 
         # populate this select box depending on the allocation (account.yaml)
         vendor_name = vendor.lower()
@@ -138,6 +145,10 @@ if __name__ == "__main__":
             node_types = ('c1 (Standard_DS1_v2, 1-core CPU)', 'b4 (Standard_B2ts_v2, 2-core CPU)', 'b32 (Standard_B32ls_v2, 32-core)', 'g1 (Standard_NC6s_A100_v3, 1 A100 GPU)')
             vendor_short = "azure"
             accounts = ('rcc-azure', 'ndtrung-azure')
+        elif 'oci' in vendor_name:
+            node_types = ('c1 (VM.Standard.A1.Flex, 1-core CPU)', 'e4 ( VM.Standard.E4.Flex, 16-core CPU)')
+            vendor_short = "oci"
+            accounts = ('ndtrung-oci')            
         elif 'midway3' in vendor_name:
             node_types = ('t1 (1 CPU core + 4 GB RAM)', 'c4 (4 CPU cores + 16 GB RAM)', 'c16 (16 CPU cores + 64 GB RAM)', 'c48 (48 CPU cores + 128 GB RAM)', 'g1 (8 CPU cores + 1 V100 GPU)', 'bigmem (16 CPU cores + 512 GB RAM)')
             accounts = ('rcc-midway3',)
@@ -202,7 +213,7 @@ if __name__ == "__main__":
             jobs.write("Node initializing..")
 
         st.markdown("#### Running nodes")
-        headers=['Name', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']
+        headers=['Name', 'User', 'Status',  'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']
 
         # listing all the running nodes/instances
         nodes = instanceDescriptor.list_nodes()

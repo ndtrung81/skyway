@@ -124,15 +124,17 @@ if __name__ == "__main__":
     msg = "Skyway cancel/terminate an instance"
     parser = argparse.ArgumentParser(description=msg)
     parser.add_argument('-A', '--account', dest='account', default="", help="Account name")
-    parser.add_argument('--provider', dest='provider', default="", help="Vendor name: AWS, GCP, Azure, or RCC Midway")
     parser.add_argument('-i', '--instance-id', dest='instance_id', default="", help="Instance ID")
     parser.add_argument(dest='jobname', nargs='*', default="", help="Job name to cancel")
 
     args = parser.parse_args()    
     account_name = args.account
-    provider = args.provider.lower()
-    job_name = args.jobname[0]
+    provider = ""
     instance_id = args.instance_id
+    if len(args.jobname) > 0:
+        job_name = args.jobname[0]
+    else:
+        job_name = ""
     
     if provider == "":
         # try to infer the vendor name from account
@@ -154,9 +156,15 @@ if __name__ == "__main__":
     if skywayroot == "":
         raise Exception("SKYWAYROOT is not defined.")
 
+    if job_name != "":
+        print(f"Need a job name to proceed")
+        quit
+
     # create an instance descriptor (like with the dashboard)
     instanceDescriptor = InstanceDescriptor(job_name, account_name, vendor_name)
 
     # cancel the job
     node_names = [job_name]
     instanceDescriptor.terminateJob(node_names=node_names, instance_id=instance_id)
+
+        
