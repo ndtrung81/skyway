@@ -102,7 +102,6 @@ if __name__ == "__main__":
     parser.add_argument('-J', '--job-name', dest='jobname', default="my-run", help="Job name")
     parser.add_argument('-A', '--account', dest='account', default="", help="Account name")
     parser.add_argument('--provider', dest='provider', default="", help="Vendor name: AWS, GCP, Azure, or RCC Midway")
-    parser.add_argument('--partition', dest='partition', default="", help="Partition")
     parser.add_argument('--constraint', dest='constraint', default="", help="Node type")
     parser.add_argument('-t', '--time', dest='walltime', default="", help="Walltime")
     
@@ -112,7 +111,7 @@ if __name__ == "__main__":
     account_name = args.account
     node_type = args.constraint
     walltime = args.walltime
-    provider = args.provider.lower()
+    provider = ""
     
     if provider == "":
         # try to infer the vendor name from account

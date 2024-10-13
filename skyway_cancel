@@ -156,8 +156,8 @@ if __name__ == "__main__":
     if skywayroot == "":
         raise Exception("SKYWAYROOT is not defined.")
 
-    if job_name != "":
-        print(f"Need a job name to proceed")
+    if job_name == "" and instance_id == "":
+        print(f"Need a job name or an instance id to proceed")
         quit
 
     # create an instance descriptor (like with the dashboard)
