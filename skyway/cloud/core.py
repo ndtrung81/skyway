@@ -80,7 +80,7 @@ class Cloud():
         '''
         pass
 
-    def create_nodes(self, node_type: str, node_names = [], need_confirmation = True, walltime = None):
+    def create_nodes(self, node_type: str, node_names = [], need_confirmation = True, walltime = None, image_id = ""):
         '''
         create several nodes (aka instances) given a list of node names
         '''

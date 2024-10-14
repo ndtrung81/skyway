@@ -126,7 +126,7 @@ class OCI(Cloud):
             print("", file=output_str)
         return nodes, output_str
 
-    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None):
+    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None, image_id = ""):
         """Member function: create_compute
         Create a group of compute instances(nodes, servers, virtual-machines 
         ...) with the given type.
@@ -175,15 +175,19 @@ class OCI(Cloud):
         )
         availability_domain = list_availability_domains_response.data[0]
 
+        vm_image = self.account['image_id']
+        if image_id != "":
+            vm_image = image_id
+
         instance_details = oci.core.models.LaunchInstanceDetails(
-            compartment_id=self.account['compartment_id'],
-            availability_domain=availability_domain.name,
-            shape=self.vendor['node-types'][node_type]['name'],
-            shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(ocpus=1, memory_in_gbs=1),
-            display_name='my_instance',
-            create_vnic_details=vnic_details,
-            image_id=self.account['image_id'],
-            metadata={
+            compartment_id = self.account['compartment_id'],
+            availability_domain = availability_domain.name,
+            shape = self.vendor['node-types'][node_type]['name'],
+            shape_config = oci.core.models.LaunchInstanceShapeConfigDetails(ocpus=1, memory_in_gbs=1),
+            display_name = 'my_instance',
+            create_vnic_details = vnic_details,
+            image_id = vm_image,
+            metadata = {
                 'ssh_authorized_keys': ssh_pub_key,
                 'Name': node_name,
                 'User': user_name,

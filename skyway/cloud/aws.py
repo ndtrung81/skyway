@@ -142,7 +142,7 @@ class AWS(Cloud):
             print("", file=output_str)
         return nodes, output_str
 
-    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None):
+    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None, image_id = ""):
         """Member function: create_compute
         Create a group of compute instances(nodes, servers, virtual-machines 
         ...) with the given type.
@@ -174,8 +174,12 @@ class AWS(Cloud):
         
         # ImageID and KeyName provided by the account then user can connect to the running node
         #   if ImageID is from the vendor, KeyName from the account, ssh connections is denied
+        vm_image = self.account['ami_id']
+        if image_id != "":
+            vm_image = image_id
+
         instances = self.ec2.create_instances(
-            ImageId          = self.account['ami_id'],    # self.vendor['ami_id']
+            ImageId          = vm_image,                  # self.vendor['ami_id']
             KeyName          = self.account['key_name'],  # self.vendor['key_name']
             SecurityGroupIds = self.account['security_group'],
             InstanceType     = self.vendor['node-types'][node_type]['name'],

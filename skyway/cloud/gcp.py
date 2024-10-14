@@ -235,7 +235,7 @@ class GCP(Cloud):
             print("", file=output_str)
         return nodes, output_str
     
-    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None):
+    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None, image_id = ""):
         """Member function: create_compute
         Create a group of compute instances(nodes, servers, virtual-machines 
         ...) with the given type.
@@ -310,10 +310,13 @@ class GCP(Cloud):
                 # google-cloud-compute changed at some point, making tags empty when query the list of nodes with libcloud
                 tags = [{ 'node_name': node_name, 'user': user_name }]
                 # instead, we add user and node name to labels when creating nodes
+                vm_image = self.account['image_name']
+                if image_id != "":
+                    vm_image = image_id
 
                 node = self.driver.create_node(node_name,
                                                 size = node_cfg['name'],
-                                                image = self.account['image_name'], 
+                                                image = vm_image, 
                                                 location = location,
                                                 ex_network=network,
                                                 ex_subnetwork=subnet,
