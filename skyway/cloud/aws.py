@@ -247,11 +247,14 @@ class AWS(Cloud):
             
             print(f"  {cmd} or")
             print(f"  skyway_connect --account={self.account_name} -J {node_names[inode]}")
-            #cmd = f"ssh -i {pem_file_full_path} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
             #cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mkdir -p /software; sudo mount -t nfs {io_server}:/skyway /home; sudo mount -t nfs {io_server}:/software /software' "
-            cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mkdir -p /cloud/rcc-aws; sudo mount -t nfs {io_server}:/cloud/rcc-aws /cloud/rcc-aws' "
+            cmd += f"-t 'sudo shutdown -P +{walltime_in_minutes}' "
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
+            #  mount the storage attachd to the io_node optional
+            cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
+            cmd += f"-t 'sudo mkdir -p /cloud/rcc-aws; sudo mount -t nfs {io_server}:/cloud/rcc-aws /cloud/rcc-aws' "
+            p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
         return nodes
 
     def connect_node(self, instance_ID, separate_terminal=True):

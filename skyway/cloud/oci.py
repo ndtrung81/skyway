@@ -239,7 +239,7 @@ class OCI(Cloud):
         cmd = f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip} or"
         print(f"  skyway_connect --account={self.account_name} -J {instance.display_name}")
         print(f"{cmd}")
-        cmd += f" -t 'sudo shutdown -P {walltime_in_minutes}'; bash "
+        cmd += f" -t 'sudo shutdown -P +{walltime_in_minutes}' "
         #cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mount -t nfs {io_server}:/software /software' "
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 

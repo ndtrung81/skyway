@@ -351,7 +351,7 @@ class GCP(Cloud):
             user_name = os.environ['USER']
             #print("Connecting to host: " + host)
 
-            cmd = f"ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} -t 'sudo shutdown -P {walltime_in_minutes}' "
+            cmd = f"ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} -t 'sudo shutdown -P +{walltime_in_minutes}' "
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
             print("To connect to the instance, run:")
             print(f"  ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} or")
