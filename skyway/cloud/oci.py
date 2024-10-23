@@ -7,7 +7,7 @@
 Documentation for OCI Class
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import io
 import logging
 import os
@@ -234,6 +234,27 @@ class OCI(Cloud):
 
         print(f"\nCreated instance: {instance.display_name}")
 
+        # record the running time and cost at launch time and expected walltime
+        # then if destroy_nodes() is invoked then updated the end time and cost
+            
+        running_time = timedelta(hours=pt.hour, minutes=pt.minute, seconds=pt.second)
+        instance_unit_cost = self.get_unit_price_instance(instance)
+        projected_running_cost = running_time.seconds/3600.0 * instance_unit_cost
+        usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+        end_time = instance.launch_time + running_time
+
+        # store the record into the database
+        data = [user_name, instance.instance_id, instance.instance_type,
+                instance.launch_time, end_time, projected_running_cost, remaining_balance]
+
+        if os.path.isfile(self.usage_history):
+            df = pd.read_pickle(self.usage_history)
+        else:
+            df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+        df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+        df.to_pickle(self.usage_history)
+        
         # need to install nfs-utils on the VM (or having an image that has nfs-utils installed)
         print(f"To connect to the instance, run:")
         cmd = f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip} or"
@@ -338,6 +359,37 @@ class OCI(Cloud):
                         instance.id,
                         wait_for_states=[oci.core.models.Instance.LIFECYCLE_STATE_TERMINATED]
                     )
+
+                    running_time = datetime.now(timezone.utc) - instance.launch_time
+                    instance_unit_cost = self.get_unit_price_instance(instance)
+                    running_cost = running_time.seconds/3600.0 * instance_unit_cost
+
+                    response = input(f"Do you want to terminate the node {instance.id} (running cost ${running_cost:0.5f})? (y/n) ")
+                    if response != 'y':
+                        continue
+
+                    # record the running time and cost
+                    end_time = datetime.now(timezone.utc)
+                    running_time = end_time - instance.launch_time
+                    instance_unit_cost = self.get_unit_price_instance(instance)
+                    running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                    usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+
+                    # store the record into the database
+                    instance_type = instance.shape
+                    data = [user_name, instance.id, instance_type,
+                            instance.launch_time, end_time, running_cost, remaining_balance]
+
+                    if os.path.isfile(self.usage_history):
+                        df = pd.read_pickle(self.usage_history)
+                    else:
+                        df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+                    if instance.instance_id not in df['InstanceID'].values:
+                        df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                    else:
+                        df.loc[df['InstanceID'] == instance.instance_id, 'End'] = end_time
+                    df.to_pickle(self.usage_history)
 
 
     def check_valid_user(self, user_name, verbose=False):
