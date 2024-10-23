@@ -8,7 +8,7 @@
 Documentation for GCP Class
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import io
 import logging
 import os
@@ -340,7 +340,8 @@ class GCP(Cloud):
             self.driver.wait_until_running([node])
 
             # record node_type, creation time
-            creation_time_str = node.extra.get('creationTimestamp') 
+            creation_time_str = node.extra.get('creationTimestamp')
+            creation_time = datetime.strptime(creation_time_str, "%H:%M:%S")
             node_type = node_cfg['name']
             nodes[node_name] = [node_type, creation_time_str, node.public_ips[0]]
 
@@ -350,6 +351,28 @@ class GCP(Cloud):
             host = node.public_ips[0]
             user_name = os.environ['USER']
             #print("Connecting to host: " + host)
+
+            # TODO: need to update database
+            # record the running time and cost at launch time and expected walltime
+            # then if destroy_nodes() is invoked then updated the end time and cost
+
+            running_time = timedelta(hours=pt.hour, minutes=pt.minute, seconds=pt.second)
+            instance_unit_cost = self.get_unit_price_instance(node)
+            projected_running_cost = running_time.seconds/3600.0 * instance_unit_cost
+            usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+            end_time = creation_time + running_time
+
+            # store the record into the database
+            data = [user_name, node.id, node.type,
+                    creation_time_str, end_time, projected_running_cost, remaining_balance]
+
+            if os.path.isfile(self.usage_history):
+                df = pd.read_pickle(self.usage_history)
+            else:
+                df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+            df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+            df.to_pickle(self.usage_history)
 
             cmd = f"ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} -t 'sudo shutdown -P +{walltime_in_minutes}' "
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
@@ -514,7 +537,10 @@ class GCP(Cloud):
                     else:
                         df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
 
-                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                    if node.id not in df['InstanceID'].values:
+                        df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                    else:
+                        df.loc[df['InstanceID'] == node.id, 'End'] = current_time
                     df.to_pickle(self.usage_history)
             
         return

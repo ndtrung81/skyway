@@ -7,7 +7,7 @@
 Documentation for AWS Class
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import io
 import logging
 import os
@@ -110,7 +110,7 @@ class AWS(Cloud):
         
         instances = self.get_instances()
         nodes = []
-        
+       
         for instance in instances:
             node_name = self.get_instance_name(instance)
             if show_protected_nodes == False and node_name in self.account['protected_nodes']:
@@ -122,7 +122,7 @@ class AWS(Cloud):
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.total_seconds()/3600.0 * instance_unit_cost
                 instance_user_name = self.get_instance_user_name(instance)
-
+                
                 nodes.append([self.get_instance_name(instance),
                               instance_user_name,
                               instance.state['Name'],
@@ -242,6 +242,27 @@ class AWS(Cloud):
             # need to install nfs-utils on the VM (or having an image that has nfs-utils installed)
             #cmd = f"ssh -i {pem_file_full_path} {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com -t 'sudo mount -t nfs 172.31.47.245:/skyway /home' "
 
+            # record the running time and cost at launch time and expected walltime
+            # then if destroy_nodes() is invoked then updated the end time and cost
+            
+            running_time = timedelta(hours=pt.hour, minutes=pt.minute, seconds=pt.second)
+            instance_unit_cost = self.get_unit_price_instance(instance)
+            projected_running_cost = running_time.seconds/3600.0 * instance_unit_cost
+            usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+            end_time = instance.launch_time + running_time
+
+            # store the record into the database
+            data = [user_name, instance.instance_id, instance.instance_type,
+                    instance.launch_time, end_time, projected_running_cost, remaining_balance]
+
+            if os.path.isfile(self.usage_history):
+                df = pd.read_pickle(self.usage_history)
+            else:
+                df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+            df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+            df.to_pickle(self.usage_history)
+            
             print("To connect to the instance, run:")
             cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
             
@@ -385,20 +406,25 @@ class AWS(Cloud):
                 instance.terminate()
    
                 # record the running time and cost
-                running_time = datetime.now(timezone.utc) - instance.launch_time
+                end_time = datetime.now(timezone.utc)
+                running_time = end_time - instance.launch_time
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.seconds/3600.0 * instance_unit_cost
                 usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
 
                 # store the record into the database
                 data = [instance_user_name, instance.instance_id, instance.instance_type,
-                        instance.launch_time, datetime.now(timezone.utc), running_cost, remaining_balance]
+                        instance.launch_time, end_time, running_cost, remaining_balance]
+
                 if os.path.isfile(self.usage_history):
                     df = pd.read_pickle(self.usage_history)
                 else:
                     df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
 
-                df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                if instance.instance_id not in df['InstanceID'].values:
+                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                else:
+                    df.loc[df['InstanceID'] == instance.instance_id, 'End'] = end_time
                 df.to_pickle(self.usage_history)
 
                 instances.append(instance)
@@ -425,21 +451,25 @@ class AWS(Cloud):
                     continue
 
                 # record the running time and cost
-                running_time = datetime.now(timezone.utc) - instance.launch_time
+                end_time = datetime.now(timezone.utc)
+                running_time = end_time - instance.launch_time
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.seconds/3600.0 * instance_unit_cost
                 usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
 
                 # store the record into the database
                 data = [instance_user_name, instance.instance_id, instance.instance_type,
-                        instance.launch_time, datetime.now(timezone.utc), running_cost, remaining_balance]
+                        instance.launch_time, end_time, running_cost, remaining_balance]
 
                 if os.path.isfile(self.usage_history):
                     df = pd.read_pickle(self.usage_history)
                 else:
                     df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
 
-                df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                if instance.instance_id not in df['InstanceID'].values:
+                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                else:
+                    df.loc[df['InstanceID'] == instance.instance_id, 'End'] = end_time
                 df.to_pickle(self.usage_history)
 
                 instance.terminate()
