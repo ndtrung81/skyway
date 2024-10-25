@@ -6,14 +6,18 @@
 """@package docstring
 Documentation for OCI Class
 """
-import os
+
+from datetime import datetime, timezone, timedelta
 import io
+import logging
+import os
 import subprocess
 from tabulate import tabulate
+
 from .core import Cloud
 from .. import utils
 
-from datetime import datetime, timezone
+from colorama import Fore
 import pandas as pd
 
 # Oracle Cloud Infrastructure (OCI) Python SDK
@@ -73,9 +77,9 @@ class OCI(Cloud):
         self.account_name = account
         self.onpremises = False
 
-        # copy ssh pem file to pwd, change the permission to 400
+        # copy ssh pem file to ~/, change the permission to 400
         pem_file_full_path = account_path + self.account['private_key']
-        self.my_ssh_private_key =  f".my_oci_ssh_key.pem"
+        self.my_ssh_private_key =  f"~/.my_oci_ssh_key.pem"
         cmd = f"cp {pem_file_full_path} {self.my_ssh_private_key}; chmod 400 {self.my_ssh_private_key}"
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
@@ -122,7 +126,7 @@ class OCI(Cloud):
             print("", file=output_str)
         return nodes, output_str
 
-    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None):
+    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None, image_id = ""):
         """Member function: create_compute
         Create a group of compute instances(nodes, servers, virtual-machines 
         ...) with the given type.
@@ -149,7 +153,7 @@ class OCI(Cloud):
 
         count = len(node_names)      
         node_name = node_names[0]
-        print(f"Allocating {count} instance ...")
+        print(Fore.BLUE + f"Allocating {count} instance ...", end=" ")
 
         # ImageID and KeyName provided by the account then user can connect to the running node
         #   if ImageID is from the vendor, KeyName from the account, ssh connection is denied
@@ -171,15 +175,19 @@ class OCI(Cloud):
         )
         availability_domain = list_availability_domains_response.data[0]
 
+        vm_image = self.account['image_id']
+        if image_id != "":
+            vm_image = image_id
+
         instance_details = oci.core.models.LaunchInstanceDetails(
-            compartment_id=self.account['compartment_id'],
-            availability_domain=availability_domain.name,
-            shape=self.vendor['node-types'][node_type]['name'],
-            shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(ocpus=1, memory_in_gbs=1),
-            display_name='my_instance',
-            create_vnic_details=vnic_details,
-            image_id=self.account['image_id'],
-            metadata={
+            compartment_id = self.account['compartment_id'],
+            availability_domain = availability_domain.name,
+            shape = self.vendor['node-types'][node_type]['name'],
+            shape_config = oci.core.models.LaunchInstanceShapeConfigDetails(ocpus=1, memory_in_gbs=1),
+            display_name = 'my_instance',
+            create_vnic_details = vnic_details,
+            image_id = vm_image,
+            metadata = {
                 'ssh_authorized_keys': ssh_pub_key,
                 'Name': node_name,
                 'User': user_name,
@@ -224,32 +232,61 @@ class OCI(Cloud):
         
         #ip_converted = ip.replace('.','-')
 
-        print(f"Created instance: {instance.display_name}")
+        print(f"\nCreated instance: {instance.display_name}")
 
+        # record the running time and cost at launch time and expected walltime
+        # then if destroy_nodes() is invoked then updated the end time and cost
+            
+        running_time = timedelta(hours=pt.hour, minutes=pt.minute, seconds=pt.second)
+        instance_unit_cost = self.get_unit_price_instance(instance)
+        projected_running_cost = running_time.seconds/3600.0 * instance_unit_cost
+        usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+        end_time = instance.launch_time + running_time
+
+        # store the record into the database
+        data = [user_name, instance.instance_id, instance.instance_type,
+                instance.launch_time, end_time, projected_running_cost, remaining_balance]
+
+        if os.path.isfile(self.usage_history):
+            df = pd.read_pickle(self.usage_history)
+        else:
+            df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+        df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+        df.to_pickle(self.usage_history)
+        
         # need to install nfs-utils on the VM (or having an image that has nfs-utils installed)
         print(f"To connect to the instance, run:")
-        cmd = f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip}"
+        cmd = f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip} or"
+        print(f"  skyway_connect --account={self.account_name} -J {instance.display_name}")
         print(f"{cmd}")
-        cmd += f" -t 'sudo shutdown -P {walltime_in_minutes}'; bash "
+        cmd += f" -t 'sudo shutdown -P +{walltime_in_minutes}' "
         #cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mount -t nfs {io_server}:/software /software' "
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
         return nodes
 
-    def connect_node(self, instance):
+    def connect_node(self, instance, separate_terminal=True):
         """
         Connect to an instance using account's pem file
-        [account_name].pem file should be under $SKYWAYROOT/etc/accounts
         It is important to create the node using the account's key-name.
         """
         public_ip = self.get_host_ip(instance)
-        account_pem_file = self.account['private_key']
         username = "opc"
         
-        cmd = "gnome-terminal --title='Connecting to the node' -- bash -c "
-        cmd += f" 'ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip}' "
+        if separate_terminal == True:
+            cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
+            cmd += f" 'ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip}' "
+        else:
+            cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip}"
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
         #os.system(cmd)
+
+        node_info = {
+            'private_key' : self.my_ssh_private_key,
+            'login' : f"{username}@{public_ip}",
+        }
+        return node_info
 
     def execute(self, instance_ID: str, **kwargs):
         '''
@@ -323,6 +360,37 @@ class OCI(Cloud):
                         wait_for_states=[oci.core.models.Instance.LIFECYCLE_STATE_TERMINATED]
                     )
 
+                    running_time = datetime.now(timezone.utc) - instance.launch_time
+                    instance_unit_cost = self.get_unit_price_instance(instance)
+                    running_cost = running_time.seconds/3600.0 * instance_unit_cost
+
+                    response = input(f"Do you want to terminate the node {instance.id} (running cost ${running_cost:0.5f})? (y/n) ")
+                    if response != 'y':
+                        continue
+
+                    # record the running time and cost
+                    end_time = datetime.now(timezone.utc)
+                    running_time = end_time - instance.launch_time
+                    instance_unit_cost = self.get_unit_price_instance(instance)
+                    running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                    usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+
+                    # store the record into the database
+                    instance_type = instance.shape
+                    data = [user_name, instance.id, instance_type,
+                            instance.launch_time, end_time, running_cost, remaining_balance]
+
+                    if os.path.isfile(self.usage_history):
+                        df = pd.read_pickle(self.usage_history)
+                    else:
+                        df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+                    if instance.instance_id not in df['InstanceID'].values:
+                        df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                    else:
+                        df.loc[df['InstanceID'] == instance.instance_id, 'End'] = end_time
+                    df.to_pickle(self.usage_history)
+
 
     def check_valid_user(self, user_name, verbose=False):
         if user_name not in self.users:
@@ -367,6 +435,31 @@ class OCI(Cloud):
         remaining_balance = float(user_budget) - float(accumulating_cost)
 
         return accumulating_cost, remaining_balance
+
+    def get_usage_history_from_db(self, user_name):
+        '''
+        compute the accumulating cost from the pkl database
+        and the remaining balance
+        '''
+        if user_name not in self.users:
+            raise Exception(f"{user_name} is not listed in the user group of this account.")
+                
+        user_budget = self.users[user_name]['budget']
+
+        if not os.path.isfile(self.usage_history):
+            print(f"Usage history {self.usage_history} is not available")
+            data = [user_name, "--", "--", "00:00:00", "00:00:00", "0.0", user_budget]
+            df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            #df = pd.DataFrame(columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+            df.to_pickle(self.usage_history)
+            return 0, user_budget
+
+        df = pd.read_pickle(self.usage_history)
+        df_user = df.loc[df['User'] == user_name]
+        
+        history = df_user[['User','InstanceID','InstanceType','Start','End']]
+        return history
 
     def get_budget_api(self):
         '''

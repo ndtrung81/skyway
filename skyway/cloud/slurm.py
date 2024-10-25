@@ -6,14 +6,18 @@
 """@package docstring
 Documentation for SLURMCluster Class
 """
-import os
+
+from datetime import datetime, timezone
 import io
+import logging
+import os
 import subprocess
 from tabulate import tabulate
+
 from .core import Cloud
 from .. import utils
 
-from datetime import datetime, timezone
+from colorama import Fore
 import pandas as pd
 
 class SLURMJob:
@@ -247,7 +251,7 @@ class SLURMCluster(Cloud):
         return nodes, output_str
 
 
-    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None):
+    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None, image_id = ""):
         '''
         create several nodes (aka instances) given a list of node names using salloc
         for SLURM it is a wrapper of salloc
@@ -299,15 +303,24 @@ class SLURMCluster(Cloud):
         #p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
         os.system(cmd)
 
-    def connect_node(self, node_name):
+    def connect_node(self, node_name, separate_terminal=True):
         '''
         connect to a node (aka instance) via SSH: for slurm, node name is alias to the host IP
         '''
         print(f"Node name: {node_name}")
-        
-        cmd = f"gnome-terminal --title='Connecting to the node' -- bash -c 'ssh  -o StrictHostKeyChecking=accept-new {node_name}' "
+        if separate_terminal == True:
+            cmd = f"gnome-terminal --title='Connecting to the node' -- bash -c 'ssh  -o StrictHostKeyChecking=accept-new {node_name}' "
+        else:
+            cmd = f"ssh  -o StrictHostKeyChecking=accept-new {node_name}"
         print(f"{cmd}")
         os.system(cmd)
+
+    def get_node_connection_info(self, node_name):
+        node_info = {
+            'private_key' : "",
+            'login' : f"{node_name}",
+        }
+        return node_info
 
     def destroy_nodes(self, IDs = [], need_confirmation=True):
         '''

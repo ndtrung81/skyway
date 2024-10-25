@@ -5,15 +5,18 @@
 """@package docstring
 Documentation for Azure Class
 """
-import os
+
+from datetime import datetime, timezone
 import io
 import logging
+import os
 import subprocess
 from tabulate import tabulate
-from datetime import datetime, timezone
 
 from .core import Cloud
 from .. import utils
+
+from colorama import Fore
 import pandas as pd
 
 from azure.identity import ClientSecretCredential
@@ -143,7 +146,7 @@ class AZURE(Cloud):
                 return
 
         count = len(node_names)
-        print(f"Allocating {count} instance ...")
+        print(Fore.BLUE + f"Allocating {count} instance ...", end=" ")
 
         nodes = {}
         node_cfg = self.vendor['node-types'][node_type]
@@ -248,7 +251,7 @@ class AZURE(Cloud):
             creation_time_str = node.extra.get('properties')['timeCreated']
             nodes[node_name] = [str(node.id), node_type, creation_time_str]
 
-            print(f"Allocated instance: {node_name}")
+            print(f"\nCreated instance: {node_name}")
 
             # ssh to the node and execute a shutdown command scheduled for walltime
             '''
@@ -279,7 +282,10 @@ class AZURE(Cloud):
         '''
         
 
-    def connect_node(self, node_name):
+    def connect_node(self, node_name, separate_terminal=True):
+        pass
+
+    def get_node_connection_info(self, instance_ID):
         pass
 
     def destroy_nodes(self, node_names, need_confirmation=True):
@@ -442,6 +448,31 @@ class AZURE(Cloud):
         remaining_balance = user_budget - accumulating_cost
 
         return accumulating_cost, remaining_balance
+
+    def get_usage_history_from_db(self, user_name):
+        '''
+        compute the accumulating cost from the pkl database
+        and the remaining balance
+        '''
+        if user_name not in self.users:
+            raise Exception(f"{user_name} is not listed in the user group of this account.")
+                
+        user_budget = self.users[user_name]['budget']
+
+        if not os.path.isfile(self.usage_history):
+            print(f"Usage history {self.usage_history} is not available")
+            data = [user_name, "--", "--", "00:00:00", "00:00:00", "0.0", user_budget]
+            df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            #df = pd.DataFrame(columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+            df.to_pickle(self.usage_history)
+            return 0, user_budget
+
+        df = pd.read_pickle(self.usage_history)
+        df_user = df.loc[df['User'] == user_name]
+        
+        history = df_user[['User','InstanceID','InstanceType','Start','End']]
+        return history
 
     def get_node_types(self):
         """

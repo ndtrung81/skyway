@@ -1,24 +1,23 @@
 #!/usr/bin/env python
 
-# export SKYWAYROOT=/project/rcc/trung/skyway-github
-#./skyway_batch job_script.sh
-
 import argparse
 from datetime import datetime, timezone
 from io import StringIO
 import os
-import sys
+import subprocess
 from subprocess import PIPE, Popen
-
-import colorama
-from colorama import Fore
 
 import skyway
 from skyway.cloud.aws import *
 from skyway.cloud.gcp import *
 from skyway.cloud.azure import *
-from skyway.cloud.oci import *
 from skyway.cloud.slurm import *
+
+import colorama
+from colorama import Fore
+
+# export SKYWAYROOT=/project/rcc/trung/skyway-github
+#./skyway_batch job_script.sh
 
 class InstanceDescriptor:
     def __init__(self, jobname: str, account_name: str, node_type: str, walltime: str, vendor_name: str):
@@ -35,23 +34,13 @@ class InstanceDescriptor:
             self.account = GCP(account_name)
         elif 'azure' in vendor_name:
             self.account = AZURE(account_name)
-        elif 'oci' in vendor_name:
-            self.account = OCI(account_name)
         elif 'midway3' in vendor_name:
             self.account = SLURMCluster(account_name)
 
         self.user = os.environ['USER']
 
-    def submitJob(self, script_name=None, pre_execute=""):
-        print(Fore.BLUE + f"Requesting node from {self.vendor_name} with account {self.account_name}")
-        nodes = self.account.create_nodes(self.node_type, [self.jobname], need_confirmation=False, walltime=self.walltime)
-
-        # execute pre-execute commands after nodes are available: e.g. data transfers
-        if pre_execute != "":
-            # append the command with account and job name
-            pre_execute += " --account=" + account_name + " -J" + job_name
-            os.system(pre_execute)
-
+    def execute(self, script_name=None):
+       
         # execute the commands listed in the script on the compute node
         if script_name is not None:
             if "midway3" in self.vendor_name:
@@ -59,21 +48,20 @@ class InstanceDescriptor:
                 instanceID = self.account.get_host_ip(self.jobname)
                 self.account.execute_script(instanceID, script_name)
 
-            elif "aws" in self.vendor_name or "oci" in self.vendor_name:
+            elif "aws" in self.vendor_name:
                 instanceID = self.account.get_instance_ID(self.jobname)
                 self.account.execute_script(instanceID, script_name)
 
             elif "gcp" in self.vendor_name:
                 instanceID = self.account.get_instance_ID(self.jobname)
                 self.account.execute_script(instanceID, script_name)
-
-        return nodes
+  
 
 '''
    parse the job script to get the account information, node type (constraint) and walltime
 '''
 def parse_script(filename):
-    jobname = "my-run"
+    jobname = ""
     account = ""
     constraint = ""
     walltime = ""
@@ -111,19 +99,21 @@ def parse_script(filename):
             }
 
 if __name__ == "__main__":
-
+   
     colorama.init(autoreset=True)
 
-    msg = "Skyway CLI batch job submisssion"
-    script = sys.argv[1]
-    args = parse_script(script)
+    msg = "Skyway execute commands on a running VM of a cloud account"
+    parser = argparse.ArgumentParser(description=msg)
+    parser.add_argument('-J', '--job-name', dest='jobname', default="your-run", help="Job name")
+    parser.add_argument('-A', '--account', dest='account', default="", help="Account name")
+    parser.add_argument('--provider', dest='provider', default="", help="Vendor name: AWS, GCP, Azure, or RCC Midway")
+    parser.add_argument(dest='script', nargs='*', default="", help="Script to run")
+    args = parser.parse_args()
 
-    job_name = args['jobname']
-    account_name = args['account']
-    node_type = args['constraint']
-    walltime = args['walltime']
-    skyway_cmd = args['skyway_cmd']
-    provider = ""
+    job_name = args.jobname
+    account_name = args.account
+    provider = args.provider.lower()
+    script = args.script[0]
 
     if provider == "":
         # try to infer the vendor name from account
@@ -135,6 +125,22 @@ if __name__ == "__main__":
             vendor_name = "azure"
         elif 'oci' in account_name:
             vendor_name = "oci"
+        elif 'midway3' in account_name or 'rcc-staff' in account_name:
+            vendor_name = "rcc-midway3"
+    else:
+        vendor_name = provider
+
+    args = parse_script(script)
+    skyway_cmd = args['skyway_cmd']
+
+    if provider == "":
+        # try to infer the vendor name from account
+        if 'aws' in account_name:
+            vendor_name = "aws"
+        elif 'gcp' in account_name:
+            vendor_name = "gcp"
+        elif 'azure' in account_name:
+            vendor_name = "azure"
         elif 'midway3' in account_name or 'rcc-staff' in account_name:
             vendor_name = "rcc-midway3"
         else:
@@ -149,7 +155,13 @@ if __name__ == "__main__":
         raise Exception("SKYWAYROOT is not defined.")
 
     # create an instance descriptor
-    instanceDescriptor = InstanceDescriptor(job_name, account_name, node_type, walltime, vendor_name)
+    instanceDescriptor = InstanceDescriptor(job_name, account_name, "", "", vendor_name)
+
+    # execute pre-launch commands: e.g. data transfers
+    if skyway_cmd != "":
+        # append the command with account and job name
+        skyway_cmd += " --account=" + account_name + " -J" + job_name
+        os.system(skyway_cmd)
 
     # submit job
-    instanceDescriptor.submitJob(script_name=script, pre_execute=skyway_cmd)
+    instanceDescriptor.execute(script_name=script)

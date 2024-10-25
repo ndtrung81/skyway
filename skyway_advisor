@@ -1,9 +1,9 @@
 #!/usr/bin/env python
+import argparse
+from datetime import datetime, timezone
+from io import StringIO
 import os
 import sys
-import yaml
-import subprocess
-import pandas
 from subprocess import PIPE, Popen
 
 import skyway
@@ -15,9 +15,8 @@ from skyway.cloud.oci import *
 
 from skyway import account
 
-from datetime import datetime, timezone
-from io import StringIO
-import argparse
+import colorama
+from colorama import Fore
 
 # export SKYWAYROOT=/project/rcc/trung/skyway-github
 #./skyway_batch job_script.sh
@@ -147,8 +146,10 @@ def parse_script(filename):
 
 if __name__ == "__main__":
 
+    colorama.init(autoreset=True)
+
     msg = "Skyway Advisor"
-    print(msg)
+    print(Fore.GREEN + msg)
     script = sys.argv[1]
     args = parse_script(script)
 
@@ -165,8 +166,9 @@ if __name__ == "__main__":
     
     # list all node types in the accounts that the group rcc have access to
     all_accounts = account.accounts()
-    #print(all_accounts)
+
     data = []
+    # iterate through the accounts and find the similar node types
     for acct_name in all_accounts:
         if "rcc" in acct_name:
             if 'aws' in acct_name:
@@ -188,9 +190,9 @@ if __name__ == "__main__":
                              acct.onpremises,
                             ])
             
-                
+    print("Available accounts and instances for {script}:")
     print(tabulate(data, headers=['Account', 'Instance Type', 'Per-hour Cost', 'On-premises']))
+    print("")
 
-            
-            #acct.get_node_types()
+
     

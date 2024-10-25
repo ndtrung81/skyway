@@ -1,9 +1,8 @@
 #!/usr/bin/env python
+import argparse
+from datetime import datetime, timezone
+from io import StringIO
 import os
-import sys
-import yaml
-import subprocess
-import pandas
 from subprocess import PIPE, Popen
 
 import skyway
@@ -13,10 +12,8 @@ from skyway.cloud.azure import *
 from skyway.cloud.slurm import *
 from skyway.cloud.oci import *
 
-from datetime import datetime, timezone
-from io import StringIO
-
-import argparse
+import colorama
+from colorama import Fore
 
 # export SKYWAYROOT=/project/rcc/trung/skyway-github
 #./skyway_interactive.py --account=rcc-aws --constraint=t1 --walltime=01:00:00
@@ -44,7 +41,8 @@ class InstanceDescriptor:
         self.user = os.environ['USER']
 
     def submitJob(self):       
-        print(f"Creating nodes from {self.vendor_name} with account {self.account_name}")
+        print(Fore.BLUE + f"Requesting nodes from {self.vendor_name} with account {self.account_name}")
+
         nodes = self.account.create_nodes(self.node_type,
                                           [self.jobname],
                                            need_confirmation=True,
@@ -97,14 +95,14 @@ class InstanceDescriptor:
 
 if __name__ == "__main__":
 
-    msg = "Skyway CLI interactive mode"
+    colorama.init(autoreset=True)
+
+    msg = "Skyway allocate/provision an instance"
     parser = argparse.ArgumentParser(description=msg)
-    parser.add_argument('-J', dest='jobname', default="your-run", help="Job name")
-    parser.add_argument('--account', dest='account', default="", help="Account name")
-    parser.add_argument('--provider', dest='provider', default="", help="Vendor name: AWS, GCP, Azure, or RCC Midway")
-    parser.add_argument('--partition', dest='partition', default="", help="Partition")
-    parser.add_argument('--constraint', dest='constraint', default="", help="Node type")
-    parser.add_argument('--time', dest='walltime', default="", help="Walltime")
+    parser.add_argument('-J', '--job-name', dest='jobname', default="my-run", help="Job name")
+    parser.add_argument('-A', '--account', dest='account', default="", help="Account name")
+    parser.add_argument('-c', '--constraint', dest='constraint', default="", help="Node type")
+    parser.add_argument('-t', '--time', dest='walltime', default="", help="Walltime")
     
     args = parser.parse_args()
 
@@ -112,7 +110,7 @@ if __name__ == "__main__":
     account_name = args.account
     node_type = args.constraint
     walltime = args.walltime
-    provider = args.provider.lower()
+    provider = ""
     
     if provider == "":
         # try to infer the vendor name from account

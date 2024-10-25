@@ -85,12 +85,16 @@ class InstanceDescriptor:
             instanceID = self.account.get_instance_ID(self.jobname)
             self.account.connect_node(instanceID)
 
-    def terminateJob(self, node_names = []):
+    def terminateJob(self, node_names = [], instance_id=""):
         if "midway3" in self.vendor_name:
             instanceID = self.account.get_instance_ID(self.jobname)
             self.account.destroy_nodes(IDs=[instanceID], need_confirmation=False)
         else:
-            self.account.destroy_nodes(node_names=node_names, need_confirmation=False)
+            if instance_id == "":
+                self.account.destroy_nodes(node_names=node_names, need_confirmation=False)
+            else:
+                self.account.destroy_nodes(IDs=[instance_id], need_confirmation=False)
+
 
     def getBalance(self):
         # retrieve from database for the given account
@@ -119,14 +123,18 @@ if __name__ == "__main__":
 
     msg = "Skyway cancel/terminate an instance"
     parser = argparse.ArgumentParser(description=msg)
-    parser.add_argument('--account', dest='account', default="", help="Account name")
-    parser.add_argument('--provider', dest='provider', default="", help="Vendor name: AWS, GCP, Azure, or RCC Midway")
+    parser.add_argument('-A', '--account', dest='account', default="", help="Account name")
+    parser.add_argument('-i', '--instance-id', dest='instance_id', default="", help="Instance ID")
     parser.add_argument(dest='jobname', nargs='*', default="", help="Job name to cancel")
 
     args = parser.parse_args()    
     account_name = args.account
-    provider = args.provider.lower()
-    job_name = args.jobname[0]
+    provider = ""
+    instance_id = args.instance_id
+    if len(args.jobname) > 0:
+        job_name = args.jobname[0]
+    else:
+        job_name = ""
     
     if provider == "":
         # try to infer the vendor name from account
@@ -148,9 +156,15 @@ if __name__ == "__main__":
     if skywayroot == "":
         raise Exception("SKYWAYROOT is not defined.")
 
+    if job_name == "" and instance_id == "":
+        print(f"Need a job name or an instance id to proceed")
+        quit
+
     # create an instance descriptor (like with the dashboard)
     instanceDescriptor = InstanceDescriptor(job_name, account_name, vendor_name)
 
     # cancel the job
     node_names = [job_name]
-    instanceDescriptor.terminateJob(node_names=node_names)
+    instanceDescriptor.terminateJob(node_names=node_names, instance_id=instance_id)
+
+        

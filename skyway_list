@@ -1,9 +1,9 @@
 #!/usr/bin/env python
+import argparse
+from datetime import datetime, timezone
+from io import StringIO
 import os
-import sys
-import yaml
 import subprocess
-import pandas
 from subprocess import PIPE, Popen
 
 import skyway
@@ -13,10 +13,8 @@ from skyway.cloud.azure import *
 from skyway.cloud.slurm import *
 from skyway.cloud.oci import *
 
-from datetime import datetime, timezone
-from io import StringIO
-
-import argparse
+import colorama
+from colorama import Fore
 
 # export SKYWAYROOT=/project/rcc/trung/skyway-github
 #./skyway_list --account=rcc-aws
@@ -64,18 +62,18 @@ class InstanceDescriptor:
 
 if __name__ == "__main__":
 
+    colorama.init(autoreset=True)
+
     msg = "Skyway list all the running VMs of a cloud account"
     parser = argparse.ArgumentParser(description=msg)
-    parser.add_argument('-J', dest='jobname', default="your-run", help="Job name")
-    parser.add_argument('--account', dest='account', default="", help="Account name")
-    parser.add_argument('--provider', dest='provider', default="", help="Vendor name: AWS, GCP, Azure, or RCC Midway")
-    parser.add_argument('--partition', dest='partition', default="", help="Partition")
+    parser.add_argument('-J', '--job-name',  dest='jobname', default="your-run", help="Job name")
+    parser.add_argument('-A', '--account', dest='account', default="", help="Account name")
     
     args = parser.parse_args()
 
     job_name = args.jobname
     account_name = args.account
-    provider = args.provider.lower()
+    provider = ""
     
     if provider == "":
         # try to infer the vendor name from account
@@ -101,7 +99,7 @@ if __name__ == "__main__":
     instanceDescriptor = InstanceDescriptor(job_name, account_name, "", "", vendor_name)
 
     # listing all the running nodes/instances
-    headers=['Name', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']
+    headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']
 
     nodes = instanceDescriptor.list_nodes()
 

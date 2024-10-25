@@ -7,15 +7,18 @@
 """@package docstring
 Documentation for GCP Class
 """
-import os
+
+from datetime import datetime, timezone, timedelta
 import io
 import logging
+import os
 import subprocess
 from tabulate import tabulate
-from datetime import datetime, timezone
 
 from .core import Cloud
 from .. import utils
+
+from colorama import Fore
 import pandas as pd
 
 # apache-libcloud
@@ -134,6 +137,31 @@ class GCP(Cloud):
 
         return accumulating_cost, remaining_balance
 
+    def get_usage_history_from_db(self, user_name):
+        '''
+        compute the accumulating cost from the pkl database
+        and the remaining balance
+        '''
+        if user_name not in self.users:
+            raise Exception(f"{user_name} is not listed in the user group of this account.")
+                
+        user_budget = self.users[user_name]['budget']
+
+        if not os.path.isfile(self.usage_history):
+            print(f"Usage history {self.usage_history} is not available")
+            data = [user_name, "--", "--", "00:00:00", "00:00:00", "0.0", user_budget]
+            df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            #df = pd.DataFrame(columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+            df.to_pickle(self.usage_history)
+            return 0, user_budget
+
+        df = pd.read_pickle(self.usage_history)
+        df_user = df.loc[df['User'] == user_name]
+        
+        history = df_user[['User','InstanceID','InstanceType','Start','End']]
+        return history
+
     def get_node_types(self):
         """
         List all the node (instance) types provided by the vendor and their unit prices
@@ -192,11 +220,14 @@ class GCP(Cloud):
                 # Calculate the running cost
                 instance_unit_cost = self.get_unit_price_instance(node)
                 running_cost = running_time.seconds/3600.0 * instance_unit_cost
-                nodes.append([node.name, node.state, node.size, node.id, node.public_ips[0], running_time, running_cost])
+
+                node_user_name = self.get_instance_user_name(node)
+
+                nodes.append([node.name, node_user_name, node.state, node.size, node.id, node.public_ips[0], running_time, running_cost])
 
         output_str = ''
         if verbose == True:
-            print(tabulate(nodes, headers=['Name', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']))
+            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']))
             print("")
         else:
             output_str = io.StringIO()
@@ -204,7 +235,7 @@ class GCP(Cloud):
             print("", file=output_str)
         return nodes, output_str
     
-    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None):
+    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None, image_id = ""):
         """Member function: create_compute
         Create a group of compute instances(nodes, servers, virtual-machines 
         ...) with the given type.
@@ -233,7 +264,8 @@ class GCP(Cloud):
         count = len(node_names)
         if count <= 0:
             raise Exception(f'List of node names is empty.')
-        print(f"Allocating {count} instance ...")
+
+        print(Fore.BLUE + f"Allocating {count} instance ...", end=" ")
 
         location_name = self.vendor['location'] + '-c'
         locations = self.driver.list_locations()
@@ -278,10 +310,13 @@ class GCP(Cloud):
                 # google-cloud-compute changed at some point, making tags empty when query the list of nodes with libcloud
                 tags = [{ 'node_name': node_name, 'user': user_name }]
                 # instead, we add user and node name to labels when creating nodes
+                vm_image = self.account['image_name']
+                if image_id != "":
+                    vm_image = image_id
 
                 node = self.driver.create_node(node_name,
                                                 size = node_cfg['name'],
-                                                image = self.account['image_name'], 
+                                                image = vm_image, 
                                                 location = location,
                                                 ex_network=network,
                                                 ex_subnetwork=subnet,
@@ -305,25 +340,49 @@ class GCP(Cloud):
             self.driver.wait_until_running([node])
 
             # record node_type, creation time
-            creation_time_str = node.extra.get('creationTimestamp') 
+            creation_time_str = node.extra.get('creationTimestamp')
+            creation_time = datetime.strptime(creation_time_str, "%H:%M:%S")
             node_type = node_cfg['name']
             nodes[node_name] = [node_type, creation_time_str, node.public_ips[0]]
 
-            print(f'Created instance: {node.name}')
+            print(f'\nCreated instance: {node.name}')
 
             # ssh to the node and execute a shutdown command scheduled for walltime
             host = node.public_ips[0]
             user_name = os.environ['USER']
             #print("Connecting to host: " + host)
 
-            cmd = f"ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} -t 'sudo shutdown -P {walltime_in_minutes}' "
+            # TODO: need to update database
+            # record the running time and cost at launch time and expected walltime
+            # then if destroy_nodes() is invoked then updated the end time and cost
+
+            running_time = timedelta(hours=pt.hour, minutes=pt.minute, seconds=pt.second)
+            instance_unit_cost = self.get_unit_price_instance(node)
+            projected_running_cost = running_time.seconds/3600.0 * instance_unit_cost
+            usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+            end_time = creation_time + running_time
+
+            # store the record into the database
+            data = [user_name, node.id, node.type,
+                    creation_time_str, end_time, projected_running_cost, remaining_balance]
+
+            if os.path.isfile(self.usage_history):
+                df = pd.read_pickle(self.usage_history)
+            else:
+                df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+            df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+            df.to_pickle(self.usage_history)
+
+            cmd = f"ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} -t 'sudo shutdown -P +{walltime_in_minutes}' "
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
             print("To connect to the instance, run:")
-            print(f"  ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} ")
+            print(f"  ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} or")
+            print(f"  skyway_connect --account={self.account_name} -J {node.name}")
         
         return nodes
 
-    def connect_node(self, node_id):
+    def connect_node(self, node_id, separate_terminal=True):
         """
         Connect to an instance using account's pem file
         [account_name].pem file should be under $SKYWAYROOT/etc/accounts
@@ -345,19 +404,41 @@ class GCP(Cloud):
                 if node.id == node_id:
                     break
         if node is not None:
-            host = node.public_ips[0]
+            public_ip = node.public_ips[0]
+            username = os.environ['USER']
+            print("Connecting to host: " + public_ip)
 
-            user_name = os.environ['USER']
-            print("Connecting to host: " + host)
+            if separate_terminal == True:
+                cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
+                cmd += f" 'ssh -o StrictHostKeyChecking=accept-new {username}@{public_ip}' "
+            else:
+                cmd = f"ssh -o StrictHostKeyChecking=accept-new {username}@{public_ip}"
 
-            cmd = "gnome-terminal --title='Connecting to the node' -- bash -c "
-            cmd += f" 'ssh -o StrictHostKeyChecking=accept-new {user_name}@{host}' "
-        
-            #cmd = 'ssh ' + user_name + '@' + host
             os.system(cmd)
         else:
             print(f"Node {node_id} does not exist.")
-        return
+
+        node_info = {
+            'private_key' : "",
+            'login' : f"{username}@{public_ip}",
+        }
+        return node_info
+
+    def get_node_connection_info(self, node_id):
+        node = None
+        for node in self.driver.list_nodes():
+            if node.state == "running":
+                if node.id == node_id:
+                    break
+        if node is not None:                
+            public_ip = node.public_ips[0]
+        
+        username = self.vendor['username']
+        node_info = {
+            'private_key' : "",
+            'login' : f"{username}@{public_ip}",
+        }
+        return node_info
 
     def execute(self, node_id: str, **kwargs):
         '''
@@ -456,7 +537,10 @@ class GCP(Cloud):
                     else:
                         df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
 
-                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                    if node.id not in df['InstanceID'].values:
+                        df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                    else:
+                        df.loc[df['InstanceID'] == node.id, 'End'] = current_time
                     df.to_pickle(self.usage_history)
             
         return

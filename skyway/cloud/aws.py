@@ -7,15 +7,17 @@
 Documentation for AWS Class
 """
 
-from datetime import datetime, timezone
-import os
+from datetime import datetime, timezone, timedelta
 import io
+import logging
+import os
 import subprocess
 from tabulate import tabulate
 
 from .core import Cloud
 from .. import utils
 
+from colorama import Fore
 import pandas as pd
 
 # AWS python SDK
@@ -91,9 +93,9 @@ class AWS(Cloud):
             EC2 = get_driver(Provider.EC2)
             self.driver = EC2(self.account['access_key_id'], self.account['secret_access_key'], self.account['region'])
         
-        # copy ssh pem file to pwd, change the permission to 400
+        # copy ssh pem file to ~/, change the permission to 400
         pem_file_full_path = account_path + self.account['key_name'] + '.pem'
-        self.my_ssh_private_key =  f".my_aws_ssh_key.pem"
+        self.my_ssh_private_key =  f"~/.my_aws_ssh_key.pem"
         cmd = f"cp {pem_file_full_path} {self.my_ssh_private_key}; chmod 400 {self.my_ssh_private_key}"
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
@@ -108,7 +110,7 @@ class AWS(Cloud):
         
         instances = self.get_instances()
         nodes = []
-        
+       
         for instance in instances:
             node_name = self.get_instance_name(instance)
             if show_protected_nodes == False and node_name in self.account['protected_nodes']:
@@ -119,9 +121,11 @@ class AWS(Cloud):
                 
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.total_seconds()/3600.0 * instance_unit_cost
-
+                instance_user_name = self.get_instance_user_name(instance)
+                
                 nodes.append([self.get_instance_name(instance),
-                              instance.state['Name'], 
+                              instance_user_name,
+                              instance.state['Name'],
                               instance.instance_type, 
                               instance.instance_id,
                               instance.public_ip_address,
@@ -130,15 +134,15 @@ class AWS(Cloud):
         
         output_str = ''
         if verbose == True:
-            print(tabulate(nodes, headers=['Name', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']))
+            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']))
             print("")
         else:
             output_str = io.StringIO()
-            print(tabulate(nodes, headers=['Name', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']), file=output_str)
+            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']), file=output_str)
             print("", file=output_str)
         return nodes, output_str
 
-    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None):
+    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None, image_id = ""):
         """Member function: create_compute
         Create a group of compute instances(nodes, servers, virtual-machines 
         ...) with the given type.
@@ -165,12 +169,17 @@ class AWS(Cloud):
 
         count = len(node_names)      
         node_name = node_names[0]
-        print(f"Allocating {count} instance ...")
 
+        print(Fore.BLUE + f"Allocating {count} instance ...", end=" ")
+        
         # ImageID and KeyName provided by the account then user can connect to the running node
         #   if ImageID is from the vendor, KeyName from the account, ssh connections is denied
+        vm_image = self.account['ami_id']
+        if image_id != "":
+            vm_image = image_id
+
         instances = self.ec2.create_instances(
-            ImageId          = self.account['ami_id'],    # self.vendor['ami_id']
+            ImageId          = vm_image,                  # self.vendor['ami_id']
             KeyName          = self.account['key_name'],  # self.vendor['key_name']
             SecurityGroupIds = self.account['security_group'],
             InstanceType     = self.vendor['node-types'][node_type]['name'],
@@ -200,7 +209,6 @@ class AWS(Cloud):
         # .pem file is the private key of the local machine that has a correponding public key listed
         # as in ~/.ssh/authorized_keys on the node
         path = os.environ['SKYWAYROOT'] + '/etc/accounts/'
-        pem_file_full_path = path + self.account['key_name'] + '.pem'
         username = self.vendor['username']
         region = self.account['region']
 
@@ -229,23 +237,48 @@ class AWS(Cloud):
             ip = instance.public_ip_address
             ip_converted = ip.replace('.','-')
 
-            print(f"Created instance: {node_names[inode]}")
+            print(f"\nCreated instance: {node_names[inode]}")
 
             # need to install nfs-utils on the VM (or having an image that has nfs-utils installed)
             #cmd = f"ssh -i {pem_file_full_path} {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com -t 'sudo mount -t nfs 172.31.47.245:/skyway /home' "
 
+            # record the running time and cost at launch time and expected walltime
+            # then if destroy_nodes() is invoked then updated the end time and cost
+            
+            running_time = timedelta(hours=pt.hour, minutes=pt.minute, seconds=pt.second)
+            instance_unit_cost = self.get_unit_price_instance(instance)
+            projected_running_cost = running_time.seconds/3600.0 * instance_unit_cost
+            usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+            end_time = instance.launch_time + running_time
+
+            # store the record into the database
+            data = [user_name, instance.instance_id, instance.instance_type,
+                    instance.launch_time, end_time, projected_running_cost, remaining_balance]
+
+            if os.path.isfile(self.usage_history):
+                df = pd.read_pickle(self.usage_history)
+            else:
+                df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+            df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+            df.to_pickle(self.usage_history)
+            
             print("To connect to the instance, run:")
             cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
-            print(f"  {cmd}")
-            #cmd = f"ssh -i {pem_file_full_path} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
+            
+            print(f"  {cmd} or")
+            print(f"  skyway_connect --account={self.account_name} -J {node_names[inode]}")
             #cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mkdir -p /software; sudo mount -t nfs {io_server}:/skyway /home; sudo mount -t nfs {io_server}:/software /software' "
-            cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mount -t nfs {io_server}:/software /software' "
+            cmd += f"-t 'sudo shutdown -P +{walltime_in_minutes}' "
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
-           
 
+            #  mount the storage attachd to the io_node optional
+            cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
+            cmd += f"-t 'sudo mkdir -p /cloud/rcc-aws; sudo mount -t nfs {io_server}:/cloud/rcc-aws /cloud/rcc-aws' "
+            p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
         return nodes
 
-    def connect_node(self, instance_ID):
+    def connect_node(self, instance_ID, separate_terminal=True):
         """
         Connect to an instance using account's pem file
         [account_name].pem file should be under $SKYWAYROOT/etc/accounts
@@ -259,9 +292,29 @@ class AWS(Cloud):
         region = self.account['region']
         ip_converted = ip.replace('.','-')
 
-        cmd = "gnome-terminal --title='Connecting to the node' -- bash -c "
-        cmd += f" 'ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com' "
+        if separate_terminal == True:
+            cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
+            cmd += f" 'ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com' "
+        else:
+            cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com"
         os.system(cmd)
+
+        node_info = {
+            'private_key' : self.my_ssh_private_key,
+            'login' : f"{username}@ec2-{ip_converted}.{region}.compute.amazonaws.com",
+        }
+        return node_info
+
+    def get_node_connection_info(self, instance_ID):
+        username = self.vendor['username']
+        ip = self.get_host_ip(instance_ID)
+        ip_converted = ip.replace('.','-')
+        region = self.account['region']
+        node_info = {
+            'private_key' : self.my_ssh_private_key,
+            'login' : f"{username}@ec2-{ip_converted}.{region}.compute.amazonaws.com",
+        }
+        return node_info
 
     def execute(self, instance_ID: str, **kwargs):
         '''
@@ -282,7 +335,7 @@ class AWS(Cloud):
         for key, value in kwargs.items():
             command += value + " "
 
-        cmd = "gnome-terminal --title='Connecting to the node' -- bash -c "
+        cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
         cmd += f" 'ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com' -t '{command}' "
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
@@ -353,20 +406,25 @@ class AWS(Cloud):
                 instance.terminate()
    
                 # record the running time and cost
-                running_time = datetime.now(timezone.utc) - instance.launch_time
+                end_time = datetime.now(timezone.utc)
+                running_time = end_time - instance.launch_time
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.seconds/3600.0 * instance_unit_cost
                 usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
 
                 # store the record into the database
                 data = [instance_user_name, instance.instance_id, instance.instance_type,
-                        instance.launch_time, datetime.now(timezone.utc), running_cost, remaining_balance]
+                        instance.launch_time, end_time, running_cost, remaining_balance]
+
                 if os.path.isfile(self.usage_history):
                     df = pd.read_pickle(self.usage_history)
                 else:
                     df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
 
-                df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                if instance.instance_id not in df['InstanceID'].values:
+                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                else:
+                    df.loc[df['InstanceID'] == instance.instance_id, 'End'] = end_time
                 df.to_pickle(self.usage_history)
 
                 instances.append(instance)
@@ -393,21 +451,25 @@ class AWS(Cloud):
                     continue
 
                 # record the running time and cost
-                running_time = datetime.now(timezone.utc) - instance.launch_time
+                end_time = datetime.now(timezone.utc)
+                running_time = end_time - instance.launch_time
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.seconds/3600.0 * instance_unit_cost
                 usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
 
                 # store the record into the database
                 data = [instance_user_name, instance.instance_id, instance.instance_type,
-                        instance.launch_time, datetime.now(timezone.utc), running_cost, remaining_balance]
+                        instance.launch_time, end_time, running_cost, remaining_balance]
 
                 if os.path.isfile(self.usage_history):
                     df = pd.read_pickle(self.usage_history)
                 else:
                     df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
 
-                df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                if instance.instance_id not in df['InstanceID'].values:
+                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                else:
+                    df.loc[df['InstanceID'] == instance.instance_id, 'End'] = end_time
                 df.to_pickle(self.usage_history)
 
                 instance.terminate()
@@ -491,6 +553,31 @@ class AWS(Cloud):
         remaining_balance = float(user_budget) - float(accumulating_cost)
 
         return accumulating_cost, remaining_balance
+
+    def get_usage_history_from_db(self, user_name):
+        '''
+        compute the accumulating cost from the pkl database
+        and the remaining balance
+        '''
+        if user_name not in self.users:
+            raise Exception(f"{user_name} is not listed in the user group of this account.")
+                
+        user_budget = self.users[user_name]['budget']
+
+        if not os.path.isfile(self.usage_history):
+            print(f"Usage history {self.usage_history} is not available")
+            data = [user_name, "--", "--", "00:00:00", "00:00:00", "0.0", user_budget]
+            df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            #df = pd.DataFrame(columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+            df.to_pickle(self.usage_history)
+            return 0, user_budget
+
+        df = pd.read_pickle(self.usage_history)
+        df_user = df.loc[df['User'] == user_name]
+        
+        history = df_user[['User','InstanceID','InstanceType','Start','End']]
+        return history
 
     def get_budget_api(self):
         '''
