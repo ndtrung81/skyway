@@ -331,24 +331,23 @@ class SLURMCluster(Cloud):
         # maybe no need to check if the job ID belongs the current user because scancel will throw errors otherwise
 
         for instanceID in IDs:
-            print(f"Cancelling job {instanceID}")
-            
+
             user_name = os.environ['USER']
             # job_id state job_name account nodelist   runningtime starttime comment user_name"
             cmd = f"export SQUEUE_FORMAT=\"%13i %.4t %24j %16a %N %M %V %k %u\"; squeue -j {instanceID} -h"
-
             proc = subprocess.Popen([cmd], stdout=subprocess.PIPE, shell=True)
             (out, err) = proc.communicate()
         
             # encode output as utf-8 from bytes, remove newline character
             line = out.decode('utf-8').strip()
 
-            
             node_info = line.split()
 
             job_user_name = node_info[8]
             if job_user_name != user_name:
+                print(f"Cannot destroy an instance {instanceID} created by other users")
                 continue
+
             jobid = node_info[0]
             state = node_info[1]        
             job_name = node_info[2]     
@@ -371,7 +370,16 @@ class SLURMCluster(Cloud):
                 print(f"Running time: {running_time} {time_stamp}")
 
             running_cost = running_time_hours * unit_price
-        
+
+            if need_confirmation == True: 
+                response = input(f"Do you want to terminate the job {instanceID} (running cost ${running_cost:0.5f})? NOTE: Data on the node will be removed. (y/n) ")
+                if response != 'y':
+                    continue
+
+            print(f"Cancelling job {instanceID}")
+            cmd = f"scancel {instanceID}"
+            os.system(cmd)
+
             # store the record into the database
             usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
             data = [job_user_name, jobid, instance_type, start_time, datetime.now(timezone.utc), running_cost, remaining_balance]
@@ -384,8 +392,6 @@ class SLURMCluster(Cloud):
             df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
             df.to_pickle(self.usage_history)
 
-            cmd = f"scancel {instanceID}"
-            os.system(cmd)
 
     def get_running_nodes(self, verbose=False):
         '''

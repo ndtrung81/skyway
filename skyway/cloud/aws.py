@@ -399,7 +399,7 @@ class AWS(Cloud):
                     continue
 
                 if need_confirmation == True: 
-                    response = input(f"Do you want to terminate the node {name} {instance.instance_id} (running cost ${running_cost:0.5f})? (y/n) ")
+                    response = input(f"Do you want to terminate the node {name} {instance.instance_id} (running cost ${running_cost:0.5f})? NOTE: Data on the node will be removed. (y/n) ")
                     if response != 'y':
                         continue
 

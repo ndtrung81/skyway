@@ -517,7 +517,7 @@ class GCP(Cloud):
                     running_cost = running_time.seconds/3600.0 * instance_unit_cost
 
                     if need_confirmation == True:
-                        response = input(f"Do you want to destroy {node.name} (running cost ${running_cost})? (y/n) ")
+                        response = input(f"Do you want to destroy {node.name} (running cost ${running_cost})? NOTE: Data on the node will be removed. (y/n) ")
                         if response != 'y':
                             continue
 

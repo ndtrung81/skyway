@@ -355,18 +355,25 @@ class OCI(Cloud):
         for node in node_names:
             for instance in running_instances:
                 if instance.display_name == node:
-                    self.compute_client_composite_operations.terminate_instance_and_wait_for_state(
-                        instance.id,
-                        wait_for_states=[oci.core.models.Instance.LIFECYCLE_STATE_TERMINATED]
-                    )
 
                     running_time = datetime.now(timezone.utc) - instance.launch_time
                     instance_unit_cost = self.get_unit_price_instance(instance)
                     running_cost = running_time.seconds/3600.0 * instance_unit_cost
 
-                    response = input(f"Do you want to terminate the node {instance.id} (running cost ${running_cost:0.5f})? (y/n) ")
+                    response = input(f"Do you want to terminate the node {instance.id} (running cost ${running_cost:0.5f})? NOTE: Data on the node will be removed. (y/n) ")
                     if response != 'y':
                         continue
+
+                    args = {
+                        'preserve_boot_volume': False,
+                        'preserve_data_volumes_created_at_launch': False,
+                    }
+
+                    self.compute_client_composite_operations.terminate_instance_and_wait_for_state(
+                        instance.id,
+                        operation_kwargs=args,
+                        wait_for_states=[oci.core.models.Instance.LIFECYCLE_STATE_TERMINATED]
+                    )
 
                     # record the running time and cost
                     end_time = datetime.now(timezone.utc)
