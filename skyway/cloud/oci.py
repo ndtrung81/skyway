@@ -91,7 +91,7 @@ class OCI(Cloud):
                 (1) instance name (2) state (3) type (4) identifier
         """
         
-        
+        user_name = os.environ['USER']
         instances = self.get_instances()
         nodes = []
 
@@ -102,13 +102,14 @@ class OCI(Cloud):
 
             if instance.lifecycle_state != 'Terminated':
                 running_time = datetime.now(timezone.utc) - instance.time_created
-                
+
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.total_seconds()/3600.0 * instance_unit_cost
 
                 public_ip_address = self.get_host_ip(instance)
                 instance_type = instance.shape
                 nodes.append([instance.display_name,
+                              user_name,
                               instance.lifecycle_state,
                               instance_type,
                               instance.id,
@@ -118,11 +119,11 @@ class OCI(Cloud):
         
         output_str = ''
         if verbose == True:
-            print(tabulate(nodes, headers=['Name', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']))
+            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']))
             print("")
         else:
             output_str = io.StringIO()
-            print(tabulate(nodes, headers=['Name', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']), file=output_str)
+            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']), file=output_str)
             print("", file=output_str)
         return nodes, output_str
 
@@ -245,12 +246,12 @@ class OCI(Cloud):
 
         # store the record into the database
         data = [user_name, instance.instance_id, instance.instance_type,
-                instance.launch_time, end_time, projected_running_cost, remaining_balance]
+                launch_time, end_time, projected_running_cost, remaining_balance]
 
         if os.path.isfile(self.usage_history):
             df = pd.read_pickle(self.usage_history)
         else:
-            df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            df = pd.DataFrame([], columns=['Name','User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
 
         df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
         df.to_pickle(self.usage_history)
@@ -266,12 +267,24 @@ class OCI(Cloud):
 
         return nodes
 
-    def connect_node(self, instance, separate_terminal=True):
+    def connect_node(self, instance_ID, separate_terminal=True):
         """
         Connect to an instance using account's pem file
         It is important to create the node using the account's key-name.
         """
-        public_ip = self.get_host_ip(instance)
+        print(f"Instance ID: {instance_ID}")
+        public_ip =""
+
+        instances = self.get_instances()
+        for instance in instances:
+            if instance.id == instance_ID:
+                public_ip = self.get_host_ip(instance)
+                break
+
+        if public_ip == "":
+            print("Invalid public IP")
+            return
+
         username = "opc"
         
         if separate_terminal == True:
@@ -356,7 +369,7 @@ class OCI(Cloud):
             for instance in running_instances:
                 if instance.display_name == node:
 
-                    running_time = datetime.now(timezone.utc) - instance.launch_time
+                    running_time = datetime.now(timezone.utc) - instance.time_created
                     instance_unit_cost = self.get_unit_price_instance(instance)
                     running_cost = running_time.seconds/3600.0 * instance_unit_cost
 
@@ -377,7 +390,7 @@ class OCI(Cloud):
 
                     # record the running time and cost
                     end_time = datetime.now(timezone.utc)
-                    running_time = end_time - instance.launch_time
+                    running_time = end_time - instance.time_created
                     instance_unit_cost = self.get_unit_price_instance(instance)
                     running_cost = running_time.seconds/3600.0 * instance_unit_cost
                     usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
@@ -385,14 +398,14 @@ class OCI(Cloud):
                     # store the record into the database
                     instance_type = instance.shape
                     data = [user_name, instance.id, instance_type,
-                            instance.launch_time, end_time, running_cost, remaining_balance]
+                            instance.time_created, end_time, running_cost, remaining_balance]
 
                     if os.path.isfile(self.usage_history):
                         df = pd.read_pickle(self.usage_history)
                     else:
-                        df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+                        df = pd.DataFrame([], columns=['Name','User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
 
-                    if instance.instance_id not in df['InstanceID'].values:
+                    if instance.id not in df['InstanceID'].values:
                         df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
                     else:
                         df.loc[df['InstanceID'] == instance.instance_id, 'End'] = end_time
@@ -619,12 +632,8 @@ class OCI(Cloud):
         running_instances = self.get_instances()
                 
         for instance in running_instances:
-            if instance.tags is None: continue
-
-            for tag in instance.tags:
-                if tag['Key'] == 'Name':
-                    if tag['Value'] == instance_name:
-                        return instance.id
+            if instance.display_name == instance_name:
+                return instance.id
         return ''
 
     def get_instance_user_name(self, instance):
