@@ -9,6 +9,7 @@ import os
 import sys
 import subprocess
 from subprocess import PIPE, Popen
+import time
 
 import colorama
 from colorama import Fore
@@ -64,18 +65,20 @@ class InstanceDescriptor:
         '''
         only get on a on-premise compute node for now with rcc-staff
         '''
-        
-        if "midway3" in self.vendor_name:
-            instanceID = self.account.get_host_ip(self.jobname)
-            self.account.connect_node(instanceID)
+        instanceID == ''
+        while instanceID == '':
+            if "midway3" in self.vendor_name:
+                instanceID = self.account.get_host_ip(self.jobname)
 
-        elif "aws" in self.vendor_name or "gcp" in self.vendor_name:
-            instanceID = self.account.get_instance_ID(self.jobname)
-            self.account.connect_node(instanceID)
+            elif "aws" in self.vendor_name or "gcp" in self.vendor_name or "oci" in self.vendor_name:
+                instanceID = self.account.get_instance_ID(self.jobname)
 
-        elif "oci" in self.vendor_name:
-            instanceID = self.account.get_instance_ID(self.jobname)
-            self.account.connect_node(instanceID)    
+            if instanceID == '':
+                print(f'Waiting for {self.vendor_name} for a valid instance ID to connect...\n')
+                # try again in 5 seconds
+                time.sleep(5)
+
+        self.account.connect_node(instanceID)
 
     def terminateJob(self, node_names = []):
         if "midway3" in self.vendor_name:
@@ -107,7 +110,7 @@ if __name__ == "__main__":
 
     colorama.init(autoreset=True)
 
-    msg = "Skyway CLI interactive mode"
+    msg = "Skyway interactive command to allocate a VM and connect to the VM"
     parser = argparse.ArgumentParser(description=msg)
     parser.add_argument('-J', '--job-name', dest='jobname', default="your-run", help="Job name")
     parser.add_argument('-A', '--account', dest='account', default="", help="Account name")

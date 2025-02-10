@@ -65,13 +65,11 @@ class InstanceDescriptor:
             instanceID = self.account.get_host_ip(self.jobname)
             self.account.connect_node(instanceID)
 
-        elif "aws" in self.vendor_name or "gcp" in self.vendor_name:
+        elif "aws" in self.vendor_name or "gcp" in self.vendor_name or "oci" in self.vendor_name:
             instanceID = self.account.get_instance_ID(self.jobname)
+            if instanceID == '':
+                raise Exception(f'Cannot find a valid instance ID for {self.jobname}. Check the running VMs with the skyway list command.')
             self.account.connect_node(instanceID)
-
-        elif "oci" in self.vendor_name:
-            instanceID = self.account.get_instance_ID(self.jobname)
-            self.account.connect_node(instanceID)    
 
 if __name__ == "__main__":
 

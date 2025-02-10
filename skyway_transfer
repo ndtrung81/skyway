@@ -67,6 +67,9 @@ class InstanceDescriptor:
 
         elif "aws" in self.vendor_name or "gcp" in self.vendor_name:
             instanceID = self.account.get_instance_ID(self.jobname)
+            if instanceID == '':
+                raise Exception(f'Cannot find a valid instance ID for {self.jobname}. Check the running VMs of this cloud account with the skyway list command.')
+
             node_info = self.account.get_node_connection_info(instanceID)
             private_key = node_info['private_key']
             remote = node_info['login']
@@ -88,6 +91,9 @@ class InstanceDescriptor:
 
         elif "oci" in self.vendor_name:
             instanceID = self.account.get_instance_ID(self.jobname)
+            if instanceID == '':
+                raise Exception(f'Cannot find a valid instance ID for {self.jobname}. Check the running VMs of this cloud account with the skyway list command.')
+
             node_info = self.account.get_node_connection_info(instanceID)
             private_key = node_info['private_key']
             remote = node_info['login']
@@ -97,7 +103,7 @@ class InstanceDescriptor:
 
 if __name__ == "__main__":
 
-    msg = "Skyway list all the running VMs of a cloud account"
+    msg = "Skyway transfer data between local storage to a running VM of a cloud account"
     parser = argparse.ArgumentParser(description=msg)
     parser.add_argument('-J', '--job-name', dest='jobname', default="your-run", help="Job name")
     parser.add_argument('-A', '--account', dest='account', default="", help="Account name")
