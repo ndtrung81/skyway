@@ -65,7 +65,7 @@ class InstanceDescriptor:
         '''
         only get on a on-premise compute node for now with rcc-staff
         '''
-        instanceID == ''
+        instanceID = ''
         while instanceID == '':
             if "midway3" in self.vendor_name:
                 instanceID = self.account.get_host_ip(self.jobname)
@@ -78,6 +78,8 @@ class InstanceDescriptor:
                 # try again in 5 seconds
                 time.sleep(5)
 
+        print(f"Waiting for the instance to be ready before connecting (30s)...")
+        time.sleep(30)
         self.account.connect_node(instanceID)
 
     def terminateJob(self, node_names = []):

@@ -272,7 +272,7 @@ class AWS(Cloud):
             cmd += f"-t 'sudo shutdown -P +{walltime_in_minutes}' "
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
-            #  mount the storage attachd to the io_node optional
+            #  mount the storage attached to the io_node (optional)
             cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
             cmd += f"-t 'sudo mkdir -p /cloud/rcc-aws; sudo mount -t nfs {io_server}:/cloud/rcc-aws /cloud/rcc-aws' "
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
@@ -297,8 +297,9 @@ class AWS(Cloud):
             cmd += f" 'ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com' "
         else:
             cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com"
-        os.system(cmd)
-
+        #os.system(cmd)
+        subprocess.run(cmd, shell=True, text=True, capture_output=True)
+        
         node_info = {
             'private_key' : self.my_ssh_private_key,
             'login' : f"{username}@ec2-{ip_converted}.{region}.compute.amazonaws.com",
