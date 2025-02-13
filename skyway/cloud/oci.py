@@ -263,6 +263,7 @@ class OCI(Cloud):
         print(f"{cmd}")
         cmd += f" -t 'sudo shutdown -P +{walltime_in_minutes}' "
         #cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mount -t nfs {io_server}:/software /software' "
+        print("Preparing the instance...")
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
         return nodes

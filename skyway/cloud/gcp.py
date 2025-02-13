@@ -370,6 +370,7 @@ class GCP(Cloud):
                 df.to_pickle(self.usage_history)
 
                 cmd = f"ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} -t 'sudo shutdown -P +{walltime_in_minutes}' "
+                print("Preparing the instance...")
                 p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
                 print("To connect to the instance, run:")
                 print(f"  ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} or")
@@ -415,7 +416,8 @@ class GCP(Cloud):
             else:
                 cmd = f"ssh -o StrictHostKeyChecking=accept-new {username}@{public_ip}"
 
-            os.system(cmd)
+            #os.system(cmd)
+            subprocess.run(cmd, shell=True, text=True, capture_output=True)
         else:
             print(f"Node {node_id} does not exist.")
 

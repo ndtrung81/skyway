@@ -270,6 +270,7 @@ class AWS(Cloud):
             print(f"  skyway_connect --account={self.account_name} -J {node_names[inode]}")
             #cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mkdir -p /software; sudo mount -t nfs {io_server}:/skyway /home; sudo mount -t nfs {io_server}:/software /software' "
             cmd += f"-t 'sudo shutdown -P +{walltime_in_minutes}' "
+            print("Preparing the instance...")
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
             #  mount the storage attached to the io_node (optional)
@@ -299,7 +300,7 @@ class AWS(Cloud):
             cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com"
         #os.system(cmd)
         subprocess.run(cmd, shell=True, text=True, capture_output=True)
-        
+
         node_info = {
             'private_key' : self.my_ssh_private_key,
             'login' : f"{username}@ec2-{ip_converted}.{region}.compute.amazonaws.com",
@@ -476,8 +477,9 @@ class AWS(Cloud):
                 instance.terminate()
                 instances.append(instance)
 
-        for instance in instances:
-            instance.wait_until_terminated()
+        #print("Waiting for the instances to stop, please be patient...")
+        #for instance in instances:
+        #    instance.wait_until_terminated()
 
 
     def check_valid_user(self, user_name, verbose=False):

@@ -257,9 +257,10 @@ class AZURE(Cloud):
             '''
             host = node.public_ips[0]
             user_name = os.environ['USER']
-            print("Connecting to host: " + host)          
-            cmd = f"ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} -t 'sudo shutdown -P {walltime_in_minutes}' "
-            os.system(cmd)
+            #print("Connecting to host: " + host)
+            print("Preparing the instance...")
+            cmd = f"ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} -t 'sudo shutdown -P +{walltime_in_minutes}' "
+            p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
             '''
 
         return nodes
