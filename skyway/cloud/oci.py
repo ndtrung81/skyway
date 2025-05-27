@@ -211,8 +211,8 @@ class OCI(Cloud):
         username = self.vendor['username']
         public_ip = self.get_host_ip(instance)
 
-        if walltime is None:
-            walltime_str = "00:05:00"
+        if walltime is None or walltime == "":
+            walltime_str = "00:30:00"
         else:
             walltime_str = walltime
 

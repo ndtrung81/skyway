@@ -152,8 +152,8 @@ class AZURE(Cloud):
         node_cfg = self.vendor['node-types'][node_type]
         size_name = node_cfg['name']           # e.g. "Standard_DS1_v2"
         
-        if walltime is None:
-            walltime_str = "00:05:00"
+        if walltime is None or walltime == "":
+            walltime_str = "00:30:00"
         else:
             walltime_str = walltime
 

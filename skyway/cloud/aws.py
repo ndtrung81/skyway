@@ -212,8 +212,8 @@ class AWS(Cloud):
         username = self.vendor['username']
         region = self.account['region']
 
-        if walltime is None:
-            walltime_str = "00:05:00"
+        if walltime is None or walltime == "":
+            walltime_str = "00:30:00"
         else:
             walltime_str = walltime
 

@@ -271,7 +271,7 @@ class SLURMCluster(Cloud):
             if response == 'n':
                 return
 
-        if walltime is None:
+        if walltime is None or walltime == "":
             walltime_str = "01:00:00"
         else:
             walltime_str = walltime

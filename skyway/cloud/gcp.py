@@ -291,8 +291,8 @@ class GCP(Cloud):
         subnets = self.driver.ex_list_subnetworks()
         subnet = next((sub for sub in subnets if sub.name == location_name), None)
 
-        if walltime is None:
-            walltime_str = "00:05:00"
+        if walltime is None or walltime == "":
+            walltime_str = "00:30:00"
         else:
             walltime_str = walltime
 
