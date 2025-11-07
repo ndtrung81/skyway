@@ -21,7 +21,7 @@ from io import StringIO
 
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
-
+import time
 import pandas as pd
 #import nest_asyncio
 
@@ -54,13 +54,15 @@ class InstanceDescriptor:
         #st.warning("Do you want to create this instance?")
         #if st.button("Yes"):
 
-        print(f"creating node from {self.vendor_name} with account {self.account_name}")
+        print(f"creating node from {self.vendor_name} with account {self.account_name} with instance type {self.node_type}\n")
         self.account.create_nodes(self.node_type, [self.jobname], need_confirmation=False, walltime=self.walltime)
         nodes_ready = False
         while nodes_ready == False:
             instanceID = self.account.get_instance_ID(self.jobname)
             if instanceID != "":
                 nodes_ready = True
+            print(f"Waiting for instance for {self.jobname} to be ready..")
+            time.sleep(5)    
 
         if self.job_script != "":
             args = self.parse_script(job_script)
@@ -310,4 +312,4 @@ if __name__ == "__main__":
 
         #st.markdown("#### Usage statistics")
 
-    st.markdown("""Skyway 2.0.0, Copyright 2022-2024, UChicago Research Computing Center""")
+    st.markdown("""Skyway v2.0, Copyright 2022-2025, UChicago Research Computing Center""")
