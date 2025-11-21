@@ -106,7 +106,7 @@ class OCI(Cloud):
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.total_seconds()/3600.0 * instance_unit_cost
 
-                public_ip_address = self.get_host_ip(instance)
+                public_ip_address = self.get_host_ip(instance.id)
                 instance_type = instance.shape
                 nodes.append([instance.display_name,
                               user_name,
@@ -209,7 +209,7 @@ class OCI(Cloud):
         path = os.environ['SKYWAYROOT'] + '/etc/accounts/'
         pem_file_full_path = path + self.account['private_key']
         username = self.vendor['username']
-        public_ip = self.get_host_ip(instance)
+        public_ip = self.get_host_ip(instance.id)
 
         if walltime is None or walltime == "":
             walltime_str = "00:30:00"
@@ -279,7 +279,7 @@ class OCI(Cloud):
         instances = self.get_instances()
         for instance in instances:
             if instance.id == instance_ID:
-                public_ip = self.get_host_ip(instance)
+                public_ip = self.get_host_ip(instance.id)
                 break
 
         if public_ip == "":
@@ -595,7 +595,6 @@ class OCI(Cloud):
 
         if vnic_attachments:
             vnic_id = vnic_attachments[0].vnic_id
-
             # Get the VNIC details
             vnic = vn_client.get_vnic(vnic_id).data
             
