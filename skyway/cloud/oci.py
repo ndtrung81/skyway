@@ -642,7 +642,7 @@ class OCI(Cloud):
         running_instances = self.get_instances()
                 
         for instance in running_instances:
-            print(f"Display name: {instance.display_name} instance_name = {instance_name}")
+            #print(f"Display name: {instance.display_name} instance_name = {instance_name}")
             if instance.display_name == instance_name:
                 return instance.id
         return ''

@@ -77,6 +77,7 @@ class InstanceDescriptor:
 
             if from_cloud == True:
                 # copy from cloud
+                print(f"copy from cloud {remote}:{cloud_path} to {local_data[0]}")
                 cmd = f"scp -rC -i {private_key} -o StrictHostKeyChecking=accept-new {remote}:{cloud_path} {local_data[0]}"
                 
             else:
@@ -103,6 +104,7 @@ class InstanceDescriptor:
 
                 if from_cloud == True:
                     # copy from cloud
+                    print(f"copy from cloud {remote}:{cloud_path} to {local_data[0]}")
                     cmd = f"scp -rC -i {private_key} -o StrictHostKeyChecking=accept-new {remote}:{cloud_path} {local_data[0]}"
                 
                 else:
@@ -112,7 +114,8 @@ class InstanceDescriptor:
                     else:
                         cmd = f"scp -rC -i {private_key} -o StrictHostKeyChecking=accept-new {local} {remote}:/{cloud_path}"
                     
-                    os.system(cmd)
+                os.system(cmd)
+
             else:
                 print(f"Failed to get connection info for instance {instanceID}")
 
