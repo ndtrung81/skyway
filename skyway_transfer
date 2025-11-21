@@ -94,12 +94,28 @@ class InstanceDescriptor:
             if instanceID == '':
                 raise Exception(f'Cannot find a valid instance ID for {self.jobname}. Check the running VMs of this cloud account with the skyway list command.')
 
+            local = ' '.join(local_data)
+
             node_info = self.account.get_node_connection_info(instanceID)
-            private_key = node_info['private_key']
-            remote = node_info['login']
-            datafile = ' '.join(data)
-            cmd = f"scp  -i {private_key} -o StrictHostKeyChecking=accept-new {local} {remote}:~/"
-            os.system(cmd)
+            if node_info:
+                private_key = node_info['private_key']
+                remote = node_info['login']
+
+                if from_cloud == True:
+                    # copy from cloud
+                    cmd = f"scp -rC -i {private_key} -o StrictHostKeyChecking=accept-new {remote}:{cloud_path} {local_data[0]}"
+                
+                else:
+                    # copy to cloud
+                    if cloud_path == "":
+                        cmd = f"scp -rC -i {private_key} -o StrictHostKeyChecking=accept-new {local} {remote}:~/"
+                    else:
+                        cmd = f"scp -rC -i {private_key} -o StrictHostKeyChecking=accept-new {local} {remote}:/{cloud_path}"
+                    
+                    os.system(cmd)
+            else:
+                print(f"Failed to get connection info for instance {instanceID}")
+
 
 if __name__ == "__main__":
 

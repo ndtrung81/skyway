@@ -295,7 +295,7 @@ class AWS(Cloud):
 
         if separate_terminal == True:
             cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
-            cmd += f" 'ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com' "
+            cmd += f" 'module purge; ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com; exec bash' "
         else:
             cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com"
         #os.system(cmd)

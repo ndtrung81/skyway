@@ -163,7 +163,7 @@ class OCI(Cloud):
             subnet_id=self.account['subnet_id'],
             assign_public_ip=True,
             display_name='my_instance_vnic',
-            hostname_label='my-instance'
+            hostname_label=node_name
         )
 
         public_key_file = self.account_path + "/" + self.account['public_key']
@@ -184,8 +184,8 @@ class OCI(Cloud):
             compartment_id = self.account['compartment_id'],
             availability_domain = availability_domain.name,
             shape = self.vendor['node-types'][node_type]['name'],
-            shape_config = oci.core.models.LaunchInstanceShapeConfigDetails(ocpus=1, memory_in_gbs=1),
-            display_name = 'my_instance',
+            shape_config = oci.core.models.LaunchInstanceShapeConfigDetails(ocpus=1, memory_in_gbs=8),
+            display_name = node_name,
             create_vnic_details = vnic_details,
             image_id = vm_image,
             metadata = {
@@ -242,10 +242,10 @@ class OCI(Cloud):
         instance_unit_cost = self.get_unit_price_instance(instance)
         projected_running_cost = running_time.seconds/3600.0 * instance_unit_cost
         usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
-        end_time = instance.launch_time + running_time
+        end_time = instance.time_created + running_time
 
         # store the record into the database
-        data = [user_name, instance.instance_id, instance.instance_type,
+        data = [user_name, instance.id, instance_type,
                 launch_time, end_time, projected_running_cost, remaining_balance]
 
         if os.path.isfile(self.usage_history):
@@ -287,18 +287,27 @@ class OCI(Cloud):
             return
 
         username = "opc"
-        
+
         if separate_terminal == True:
             cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
-            cmd += f" 'ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip}' "
+            cmd += f" 'module purge; ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip}; exec bash' "
         else:
             cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip}"
-        p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
-        #os.system(cmd)
+        #p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+        os.system(cmd)
 
         node_info = {
             'private_key' : self.my_ssh_private_key,
             'login' : f"{username}@{public_ip}",
+        }
+        return node_info
+
+    def get_node_connection_info(self, instance_ID):
+        username = self.vendor['username']
+        ip = self.get_host_ip(instance_ID)
+        node_info = {
+            'private_key' : self.my_ssh_private_key,
+            'login' : f"{username}@{ip}",
         }
         return node_info
 
@@ -409,7 +418,7 @@ class OCI(Cloud):
                     if instance.id not in df['InstanceID'].values:
                         df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
                     else:
-                        df.loc[df['InstanceID'] == instance.instance_id, 'End'] = end_time
+                        df.loc[df['InstanceID'] == instance.id, 'End'] = end_time
                     df.to_pickle(self.usage_history)
 
 
@@ -572,7 +581,7 @@ class OCI(Cloud):
 
         return nodes
 
-    def get_host_ip(self, instance):
+    def get_host_ip(self, instanceID):
         """Member function: get the IP address of an instance (node) 
          - ID: instance identifier
         """
@@ -580,8 +589,8 @@ class OCI(Cloud):
         vn_client = oci.core.VirtualNetworkClient(self.config)
 
         vnic_attachments = self.compute_client.list_vnic_attachments(
-            compartment_id=instance.compartment_id,
-            instance_id=instance.id
+            compartment_id=self.account['compartment_id'],
+            instance_id=instanceID
         ).data
 
         if vnic_attachments:
@@ -633,6 +642,7 @@ class OCI(Cloud):
         running_instances = self.get_instances()
                 
         for instance in running_instances:
+            print(f"Display name: {instance.display_name} instance_name = {instance_name}")
             if instance.display_name == instance_name:
                 return instance.id
         return ''
@@ -694,8 +704,9 @@ class OCI(Cloud):
             if self.get_instance_name(instance) in self.account['protected_nodes']:
                 continue
 
-            if instance.state['Name'] == 'running':
-                running_time = datetime.now(timezone.utc) - instance.launch_time
+            if instance.lifecycle_state == 'RUNNING':
+                launch_time = instance.time_created.strftime("%Y-%m-%dT%H:%M:%S.%f%z")
+                running_time = datetime.now(timezone.utc) - launch_time
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.seconds/3600.0 * instance_unit_cost
                 total_cost = total_cost + running_cost

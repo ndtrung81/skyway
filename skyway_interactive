@@ -56,6 +56,9 @@ class InstanceDescriptor:
         # connect to the node with jobname: used to work as expected
         #    21Aug2024: create_nodes with interactive==False would skip over the connectJob step below, no idea why
         #    27Sep2024: connectJob back to normal
+        #    19Nov2025: connectJob opens a terminal with gnome-terminal and then quits: fixed by 
+        #                 1) adding 'module purge' before ssh to remove python/anaconda-2021.05
+        #                 2) adding 'exec bash' after ssh, 
         if nodes:
             instanceDescriptor.connectJob(node_names=[job_name])
 
@@ -74,7 +77,7 @@ class InstanceDescriptor:
                 instanceID = self.account.get_instance_ID(self.jobname)
 
             if instanceID == '':
-                print(f'Waiting for {self.vendor_name} for a valid instance ID to connect...\n')
+                print(f'Waiting for {self.vendor_name} for a valid instance ID for job {self.jobname} to connect...\n')
                 # try again in 5 seconds
                 time.sleep(5)
 

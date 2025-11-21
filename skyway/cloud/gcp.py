@@ -412,7 +412,7 @@ class GCP(Cloud):
 
             if separate_terminal == True:
                 cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
-                cmd += f" 'ssh -o StrictHostKeyChecking=accept-new {username}@{public_ip}' "
+                cmd += f" 'module purge; ssh -o StrictHostKeyChecking=accept-new {username}@{public_ip}; exec bash' "
             else:
                 cmd = f"ssh -o StrictHostKeyChecking=accept-new {username}@{public_ip}"
 

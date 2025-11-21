@@ -208,6 +208,7 @@ if __name__ == "__main__":
         vendor = st.selectbox(r"$\textsf{\large Service provider}$", ('Amazon Web Services (AWS)', 'Google Cloud Platform (GCP)', 'Microsoft Azure', 'Oracle Cloud Infrastructure (OCI)', 'RCC Midway3'), help='Cloud vendors or on-premise clusters')
 
         # populate this select box depending on the allocation (account.yaml)
+        # accounts should be parsed from the files under $SKYWAYROOT/etc/accounts
         vendor_name = vendor.lower()
         if 'aws' in vendor_name:
             node_types = ('t1 (t2.micro, 1-core CPU)', 'c1 (c5.large, 1-core CPU)', 'c36 (c5.18xlarge, 36-core CPU)', 'g1 (p3.2xlarge, 1 V100 GPU)', 'g5 (p5.2xlarge, 1 A10G GPU)')
@@ -224,10 +225,10 @@ if __name__ == "__main__":
         elif 'oci' in vendor_name:
             node_types = ('c1 (VM.Standard.A1.Flex, 1-core CPU)', 'e4 ( VM.Standard.E4.Flex, 16-core CPU)')
             vendor_short = "oci"
-            accounts = ('ndtrung-oci')            
+            accounts = ('ndtrung-oci', )           
         elif 'midway3' in vendor_name:
             node_types = ('t1 (1 CPU core + 4 GB RAM)', 'c4 (4 CPU cores + 16 GB RAM)', 'c16 (16 CPU cores + 64 GB RAM)', 'c48 (48 CPU cores + 128 GB RAM)', 'g1 (8 CPU cores + 1 V100 GPU)', 'bigmem (16 CPU cores + 512 GB RAM)')
-            accounts = ('rcc-midway3',)
+            accounts = ('rcc-midway3', )
             vendor_short = "midway3"
 
         # account or allocation
