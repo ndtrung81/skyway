@@ -11,6 +11,7 @@ from datetime import datetime, timezone, timedelta
 import io
 import logging
 import os
+import random
 import subprocess
 from tabulate import tabulate
 
@@ -287,6 +288,12 @@ class OCI(Cloud):
             return
 
         username = "opc"
+
+        # set up SSH tunneling to the localhost
+        #port=random.randint(15000, 30000)
+        #cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {port}:localhost:{port} -f -N -L {username}@{public_ip}"
+        #print(f"port = {port}")
+        #os.system(cmd)
 
         if separate_terminal == True:
             cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
@@ -704,8 +711,8 @@ class OCI(Cloud):
                 continue
 
             if instance.lifecycle_state == 'RUNNING':
-                launch_time = instance.time_created.strftime("%Y-%m-%dT%H:%M:%S.%f%z")
-                running_time = datetime.now(timezone.utc) - launch_time
+                launch_time_str = instance.time_created.strftime("%Y-%m-%dT%H:%M:%S.%f%z")
+                running_time = datetime.now(timezone.utc) - instance.time_created
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.seconds/3600.0 * instance_unit_cost
                 total_cost = total_cost + running_cost
