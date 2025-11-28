@@ -23,6 +23,18 @@ from azure.identity import ClientSecretCredential
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.network.models import PublicIPAddress, PublicIPAddressSku
+from azure.core.exceptions import HttpResponseError
+from azure.mgmt.compute.models import (
+    HardwareProfile,
+    StorageProfile,
+    OSProfile,
+    NetworkProfile,
+    LinuxConfiguration,
+    SshConfiguration,
+    SshPublicKey,
+    VirtualMachine
+)
 
 from libcloud.compute.types import Provider
 from libcloud.compute.providers import get_driver
@@ -49,7 +61,7 @@ class AZURE(Cloud):
         for k, v in account_cfg.items():
             setattr(self, k.replace('-','_'), v)
 
-        public_key_file = self.account['public_key']
+        public_key_file = account_path + self.account['public_key']
         with open(public_key_file, "r") as f:
             content = f.read()
             self.public_key = content.strip()
@@ -129,7 +141,7 @@ class AZURE(Cloud):
             print("", file=output_str)
         return nodes, output_str            
 
-    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None):
+    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None, image_id = ""):
         user_name = os.environ['USER']
         user_budget = self.get_budget(user_name=user_name, verbose=False)
         usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
@@ -161,7 +173,7 @@ class AZURE(Cloud):
         pt = datetime.strptime(walltime_str, "%H:%M:%S")
         walltime_in_minutes = int(pt.hour * 60 + pt.minute + pt.second/60)
 
-        location_name = 'East US'  # Replace with your desired location
+        location_name = 'Central US'  # Replace with your desired location
         locations = self.driver.list_locations()
         location = next((loc for loc in locations if loc.name == location_name), None)
         if location is None:
@@ -182,7 +194,7 @@ class AZURE(Cloud):
         if size is None:
             raise ValueError(f"Size '{size_name}' not found.")
 
-        # select an image
+        # select an image -- ignore image_id for now
         publisher = 'Canonical'
         offer = 'UbuntuServer'
         sku = '18.04-LTS'
@@ -213,9 +225,25 @@ class AZURE(Cloud):
 
             # Step 4: Create a network interface
             nic_name = "my-nic-{}".format(user_name, node_name)
-            public_ip = self.driver.ex_create_public_ip(name=f'my_public_ip-{user_name}-{node_name}',
+
+            public_ip_name=f'my_public_ip-{user_name}-{node_name}'
+            '''
+            
+            public_ip = self.driver.ex_create_public_ip(name=public_ip_name,
                                                         resource_group=resource_group_name,
                                                         location=location)
+            '''
+            public_ip_name=f'my_public_ip-{user_name}-{node_name}'
+            public_ip_params = PublicIPAddress(
+                    location=location_name,
+                    sku=PublicIPAddressSku(name="Standard"),  # <- avoid Basic SKU limit
+                    public_ip_allocation_method="Static",
+                )
+
+            public_ip = network_client.public_ip_addresses.begin_create_or_update(
+                    resource_group_name, public_ip_name, public_ip_params
+                ).result()
+
             ip_config = {
                 "name": "ipconfig1",
                 "subnet": {"id": 
@@ -232,9 +260,11 @@ class AZURE(Cloud):
                                                                                          nic_name,
                                                                                          nic_params).result()
 
-            # Step 5: Create the instance          
+            # Step 5: Create the instance
+            node = None
             try:
                 tags = { 'node_name': node_name, 'user': user_name }
+                '''
                 node = self.driver.create_node(name=node_name,
                                                size=size,
                                                image=image,
@@ -244,14 +274,48 @@ class AZURE(Cloud):
                                                ex_nic=network_interface,
                                                ex_use_managed_disks=True,
                                                ex_tags = tags)
+                '''
+
+                vm_params = VirtualMachine(
+                    location=location_name,
+                    hardware_profile=HardwareProfile(vm_size=size_name),
+                    storage_profile=StorageProfile(
+                        image_reference={
+                            "publisher": "Canonical",
+                            "offer": "UbuntuServer",
+                            "sku": "18.04-LTS",
+                            "version": "latest",
+                        }
+                    ),
+                    os_profile=OSProfile(
+                        computer_name=node_name,
+                        admin_username=user_name,
+                        linux_configuration=LinuxConfiguration(
+                            disable_password_authentication=True,
+                            ssh=SshConfiguration(
+                                public_keys=[SshPublicKey(path=self.public_key_path, key_data=self.public_key)]
+                            )
+                        )
+                    ),
+                    network_profile=NetworkProfile(network_interfaces=[{"id": network_interface.id}]),
+                    tags=tags,
+                )
+                poller = compute_client.virtual_machines.begin_create_or_update(resource_group_name, node_name, vm_params)
+                node = poller.result()
+                print(poller)
             except Exception as ex:
                 logging.info("Failed to create %s. Reason: %s" % (node_name, str(ex)))
+            except HttpResponseError as e:
+                print(f"VM creation failed: {e.message}")
 
-            node_type = node.extra.get('properties')['hardwareProfile']['vmSize']
-            creation_time_str = node.extra.get('properties')['timeCreated']
-            nodes[node_name] = [str(node.id), node_type, creation_time_str]
+            #node_type = node.extra.get('properties')['hardwareProfile']['vmSize']
+            if node is not None:
+                node_type = size_name
+                #creation_time_str = node.extra.get('properties')['timeCreated']
+                creation_time_str = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f%z')
+                nodes[node_name] = [str(node.id), node_type, creation_time_str]
 
-            print(f"\nCreated instance: {node_name}")
+                print(f"\nCreated instance: {node_name}")
 
             # ssh to the node and execute a shutdown command scheduled for walltime
             '''
