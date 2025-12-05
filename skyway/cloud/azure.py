@@ -216,7 +216,7 @@ class AZURE(Cloud):
         for node_name in node_names:
             
             # Step 3: Create Virtual Network and Subnet if they don't exist
-            vnet_name = f"vnet-{user_name}-{node_name}".format(, )
+            vnet_name = f"vnet-{user_name}-{node_name}"
             subnet_name = f"subnet-{user_name}-{node_name}"
             vnet_params = {
                 "location": location_name,
