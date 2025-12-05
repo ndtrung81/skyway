@@ -23,7 +23,7 @@ from azure.identity import ClientSecretCredential
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.resource import ResourceManagementClient
-from azure.mgmt.network.models import PublicIPAddress, PublicIPAddressSku
+from azure.mgmt.network.models import PublicIPAddress, PublicIPAddressSku, NetworkSecurityGroup, SecurityRule
 from azure.core.exceptions import HttpResponseError
 from azure.mgmt.compute.models import (
     HardwareProfile,
@@ -105,17 +105,22 @@ class AZURE(Cloud):
         """
         nodes = []
         current_time = datetime.now(timezone.utc)
-        for node in self.driver.list_nodes():
-            
+
+        compute_client = ComputeManagementClient(self.credentials, self.account['subscription_id'])
+        
+        #for node in self.driver.list_nodes():
+        for node in compute_client.virtual_machines.list_all():
+
             # Get the creation time of the instance
             creation_time_str = node.extra.get('properties')['timeCreated']  # Azure
+            
             if creation_time_str:
                 # Convert the creation time from string to datetime object
                 # Azure returns 7-digit after '.' for seconds, so need to truncate the last digit 
                 # to cast into %Y-%m-%dT%H:%M:%S.%f%z format
                 idx = creation_time_str.find('+')
                 creation_time_str = creation_time_str[:idx-1] + creation_time_str[idx:]
-                
+
                 creation_time = datetime.strptime(creation_time_str, '%Y-%m-%dT%H:%M:%S.%f%z')
                 
                 # get the node type
@@ -123,10 +128,11 @@ class AZURE(Cloud):
 
                 # Calculate the running time
                 running_time = current_time - creation_time
-                
+
                 # get the node type
                 node_type = node.extra.get('properties')['hardwareProfile']['vmSize']
                 instance_unit_cost = self.get_unit_price_instance(node)
+                
                 running_cost = running_time.seconds/3600.0 * instance_unit_cost
              
                 nodes.append([node.name, node.state, node_type, node.id, "n/a", running_time, running_cost])
@@ -185,9 +191,9 @@ class AZURE(Cloud):
 
         # Initialize Azure management clients
         subscription_id = self.account['subscription_id']
-        resource_client = ResourceManagementClient(self.credentials, subscription_id)
-        network_client = NetworkManagementClient(self.credentials, subscription_id)
-        compute_client = ComputeManagementClient(self.credentials, subscription_id)
+        self.resource_client = ResourceManagementClient(self.credentials, subscription_id)
+        self.network_client = NetworkManagementClient(self.credentials, subscription_id)
+        self.compute_client = ComputeManagementClient(self.credentials, subscription_id)
 
         sizes = self.driver.list_sizes(location=location)
         size = next((s for s in sizes if s.name == size_name), None)
@@ -197,42 +203,63 @@ class AZURE(Cloud):
         # select an image -- ignore image_id for now
         publisher = 'Canonical'
         offer = 'UbuntuServer'
-        sku = '18.04-LTS'
+        sku = '22.04-LTS'
         version = 'latest'
         image = AzureImage(version=version, publisher=publisher, sku=sku, offer=offer, driver=self.driver, location=location)
 
         # Step 2: Create a resource group if it doesn't exist    
         # resource group is already created on the subscription (could move to account)
         resource_group_name = self.account['resource_group']   #"rg_skyway"
-        resource_client.resource_groups.create_or_update(resource_group_name, {"location": location_name})
+        self.resource_client.resource_groups.create_or_update(resource_group_name, {"location": location_name})
 
         # then for each node in the list
         for node_name in node_names:
             
             # Step 3: Create Virtual Network and Subnet if they don't exist
-            vnet_name = "vnet-{}-{}".format(user_name, node_name)
-            subnet_name = "subnet-{}-{}".format(user_name, node_name)
+            vnet_name = f"vnet-{user_name}-{node_name}".format(, )
+            subnet_name = f"subnet-{user_name}-{node_name}"
             vnet_params = {
                 "location": location_name,
                 "address_space": {"address_prefixes": ["10.0.0.0/16"]}
             }
-            network_client.virtual_networks.begin_create_or_update(resource_group_name, vnet_name, vnet_params).result()
+            self.network_client.virtual_networks.begin_create_or_update(resource_group_name, vnet_name, vnet_params).result()
 
             subnet_params = {
                 "address_prefix": "10.0.0.0/24"
             }
-            network_client.subnets.begin_create_or_update(resource_group_name, vnet_name, subnet_name, subnet_params).result()
+            self.network_client.subnets.begin_create_or_update(resource_group_name, vnet_name, subnet_name, subnet_params).result()
 
-            # Step 4: Create a network interface
-            nic_name = "my-nic-{}".format(user_name, node_name)
+            subnet = self.network_client.subnets.get(resource_group_name, vnet_name, subnet_name)
 
-            public_ip_name=f'my_public_ip-{user_name}-{node_name}'
-            '''
+            # Create Network Security Group with inbound SSH rule
+            nsg_name = f"nsg-{user_name}-{node_name}"
+            nsg = self.network_client.network_security_groups.begin_create_or_update(
+                resource_group_name,
+                nsg_name,
+                NetworkSecurityGroup(location=location_name)
+            ).result()
+
             
-            public_ip = self.driver.ex_create_public_ip(name=public_ip_name,
-                                                        resource_group=resource_group_name,
-                                                        location=location)
-            '''
+            # Inbound SSH rule
+            self.network_client.security_rules.begin_create_or_update(
+                resource_group_name,
+                nsg.name,
+                "AllowSSH",
+                SecurityRule(
+                    protocol="Tcp",
+                    direction="Inbound",
+                    source_address_prefix="*",
+                    destination_address_prefix="*",
+                    access="Allow",
+                    priority=1000,
+                    source_port_range="*",
+                    destination_port_range="22",
+                    name="AllowSSH"
+                )
+            ).result()
+
+            # Step 4: Create a network interface with the NSG and public IP address
+  
             public_ip_name=f'my_public_ip-{user_name}-{node_name}'
             public_ip_params = PublicIPAddress(
                     location=location_name,
@@ -240,23 +267,23 @@ class AZURE(Cloud):
                     public_ip_allocation_method="Static",
                 )
 
-            public_ip = network_client.public_ip_addresses.begin_create_or_update(
+            public_ip = self.network_client.public_ip_addresses.begin_create_or_update(
                     resource_group_name, public_ip_name, public_ip_params
                 ).result()
 
+            nic_name = f"my-nic-{user_name}-{node_name}"
             ip_config = {
                 "name": "ipconfig1",
-                "subnet": {"id": 
-                               f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Network/virtualNetworks/{vnet_name}/subnets/{subnet_name}"
-                          },
-                'public_ip': public_ip
+                "subnet": { "id": subnet.id },
+                "public_ip_address": {"id": public_ip.id}
             }
         
             nic_params = {
                 "location": location_name,
-                "ip_configurations": [ip_config]
+                "ip_configurations": [ip_config],
+                "network_security_group": NetworkSecurityGroup(id=nsg.id),
             }
-            network_interface = network_client.network_interfaces.begin_create_or_update(resource_group_name,
+            network_interface = self.network_client.network_interfaces.begin_create_or_update(resource_group_name,
                                                                                          nic_name,
                                                                                          nic_params).result()
 
@@ -264,18 +291,6 @@ class AZURE(Cloud):
             node = None
             try:
                 tags = { 'node_name': node_name, 'user': user_name }
-                '''
-                node = self.driver.create_node(name=node_name,
-                                               size=size,
-                                               image=image,
-                                               auth=auth,
-                                               location=location,
-                                               ex_resource_group=resource_group_name,
-                                               ex_nic=network_interface,
-                                               ex_use_managed_disks=True,
-                                               ex_tags = tags)
-                '''
-
                 vm_params = VirtualMachine(
                     location=location_name,
                     hardware_profile=HardwareProfile(vm_size=size_name),
@@ -293,16 +308,17 @@ class AZURE(Cloud):
                         linux_configuration=LinuxConfiguration(
                             disable_password_authentication=True,
                             ssh=SshConfiguration(
-                                public_keys=[SshPublicKey(path=self.public_key_path, key_data=self.public_key)]
+                                public_keys=[SshPublicKey(path=f"/home/{user_name}/.ssh/authorized_keys",
+                                                           key_data=self.public_key)]
                             )
                         )
                     ),
                     network_profile=NetworkProfile(network_interfaces=[{"id": network_interface.id}]),
                     tags=tags,
                 )
-                poller = compute_client.virtual_machines.begin_create_or_update(resource_group_name, node_name, vm_params)
-                node = poller.result()
-                print(poller)
+
+                node = self.compute_client.virtual_machines.begin_create_or_update(resource_group_name, node_name, vm_params).result()
+
             except Exception as ex:
                 logging.info("Failed to create %s. Reason: %s" % (node_name, str(ex)))
             except HttpResponseError as e:
@@ -625,8 +641,35 @@ class AZURE(Cloud):
             return self.vendor['node-types'][node_type]['price']
         return -1.0
 
+    def parse_resource_id(self, resource_id):
+        """Parse Azure resource ID to extract resource group and name"""
+        parts = resource_id.split('/')
+        return parts[4], parts[-1]  # (resource_group, resource_name)
+
     def get_host_ip(self, node_name):
-        pass
+        try:
+            vm = None
+            for instance in self.compute_client.virtual_machines.list_all():
+                if instance.name == node_name and instance.tags.get('user') == os.environ['USER']:
+                    vm = instance
+                    break
+
+            if vm is None:
+                return None
+
+            # Navigate: VM -> NIC -> Public IP
+            nic_id = vm.network_profile.network_interfaces[0].id
+            rg, nic_name = self.parse_resource_id(nic_id)
+
+            nic = self.network_client.network_interfaces.get(rg, nic_name)
+            
+            public_ip_id = nic.ip_configurations[0].public_ip_address.id
+            rg, public_ip_name = self.parse_resource_id(public_ip_id)
+            
+            public_ip = self.network_client.public_ip_addresses.get(rg, public_ip_name)
+            return public_ip.ip_address
+        except (AttributeError, IndexError, TypeError):
+            return None  # VM doesn't have a public IP
 
     def get_instance_name(self, node):
         """Member function: get_instance_name
@@ -655,7 +698,8 @@ class AZURE(Cloud):
                 continue
             if node.state == "running":
                 # Get the creation time of the instance
-                creation_time_str = node.extra.get('properties')['timeCreated']  # Azure
+                #creation_time_str = node.extra.get('properties')['timeCreated']  # Azure
+
                 if creation_time_str:
                     # Convert the creation time from string to datetime object
                     # Azure returns 7-digit after '.' for seconds, so need to truncate the last digit 
