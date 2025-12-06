@@ -112,38 +112,32 @@ class AZURE(Cloud):
         for node in compute_client.virtual_machines.list_all():
 
             # Get the creation time of the instance
-            creation_time_str = node.extra.get('properties')['timeCreated']  # Azure
             
-            if creation_time_str:
-                # Convert the creation time from string to datetime object
-                # Azure returns 7-digit after '.' for seconds, so need to truncate the last digit 
-                # to cast into %Y-%m-%dT%H:%M:%S.%f%z format
-                idx = creation_time_str.find('+')
-                creation_time_str = creation_time_str[:idx-1] + creation_time_str[idx:]
+            # Convert the creation time from string to datetime object
+            # Azure returns 7-digit after '.' for seconds, so need to truncate the last digit 
+            # to cast into %Y-%m-%dT%H:%M:%S.%f%z format
+            
+            creation_time = node.time_created
+            
+            # Calculate the running time
+            running_time = current_time - creation_time
 
-                creation_time = datetime.strptime(creation_time_str, '%Y-%m-%dT%H:%M:%S.%f%z')
-                
-                # get the node type
-                node_type = node.extra.get('properties')['hardwareProfile']['vmSize']
-
-                # Calculate the running time
-                running_time = current_time - creation_time
-
-                # get the node type
-                node_type = node.extra.get('properties')['hardwareProfile']['vmSize']
-                instance_unit_cost = self.get_unit_price_instance(node)
-                
-                running_cost = running_time.seconds/3600.0 * instance_unit_cost
-             
-                nodes.append([node.name, node.state, node_type, node.id, "n/a", running_time, running_cost])
+            # get the node type
+            node_type = node.hardware_profile.vm_size
+            instance_unit_cost = self.get_unit_price_instance(node)
+            
+            running_cost = running_time.seconds/3600.0 * instance_unit_cost
+            state = self.get_instance_status(node)
+            public_ip = self.get_host_ip(node.name)
+            nodes.append([node.name, node.tags.get('user'), state, node_type, node.vm_id, public_ip, running_time, running_cost])
 
         output_str = ''
         if verbose == True:
-            print(tabulate(nodes, headers=['Name', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']))
+            print(tabulate(nodes, headers=['Name', 'User','Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']))
             print("")
         else:
             output_str = io.StringIO()
-            print(tabulate(nodes, headers=['Name', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']), file=output_str)
+            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']), file=output_str)
             print("", file=output_str)
         return nodes, output_str            
 
@@ -627,7 +621,8 @@ class AZURE(Cloud):
         Get the per-hour price of an instance depending on its instance_type (e.g. t2.micro) from the cloud.yaml file
         """
         for node_type in self.vendor['node-types']:
-            vmtype = node.extra.get('properties')['hardwareProfile']['vmSize']
+            #vmtype = node.extra.get('properties')['hardwareProfile']['vmSize']
+            vmtype = node.hardware_profile.vm_size
             if self.vendor['node-types'][node_type]['name'] == vmtype:
                 instance_type = self.vendor['node-types'][node_type]['name']
                 unit_price = self.vendor['node-types'][node_type]['price']
@@ -649,25 +644,30 @@ class AZURE(Cloud):
     def get_host_ip(self, node_name):
         try:
             vm = None
-            for instance in self.compute_client.virtual_machines.list_all():
-                if instance.name == node_name and instance.tags.get('user') == os.environ['USER']:
+            compute_client = ComputeManagementClient(self.credentials, self.account['subscription_id'])
+            network_client = NetworkManagementClient(self.credentials, self.account['subscription_id'])
+            for instance in compute_client.virtual_machines.list_all():
+                if instance.name == node_name:
                     vm = instance
                     break
 
             if vm is None:
+                print(f"No VM found for {node_name} with user {os.environ['USER']}")
                 return None
 
             # Navigate: VM -> NIC -> Public IP
             nic_id = vm.network_profile.network_interfaces[0].id
             rg, nic_name = self.parse_resource_id(nic_id)
 
-            nic = self.network_client.network_interfaces.get(rg, nic_name)
+            nic = network_client.network_interfaces.get(rg, nic_name)
             
             public_ip_id = nic.ip_configurations[0].public_ip_address.id
             rg, public_ip_name = self.parse_resource_id(public_ip_id)
-            
-            public_ip = self.network_client.public_ip_addresses.get(rg, public_ip_name)
+
+            public_ip = network_client.public_ip_addresses.get(rg, public_ip_name)
+
             return public_ip.ip_address
+
         except (AttributeError, IndexError, TypeError):
             return None  # VM doesn't have a public IP
 
@@ -685,7 +685,32 @@ class AZURE(Cloud):
         '''
         return the user name that created the node
         '''
-        return node.extra.get('tags', {}).get('user')
+        return node.tags.get('user') if node.tags else 'N/A'
+
+    def get_instance_ID(self, instance_name: str):
+        """Member function: get_instance_ID
+        Get the instance ID from the instance name
+        """
+        resource_group_name = self.account['resource_group']
+        instance_view = self.compute_client.virtual_machines.instance_view(resource_group_name, instance_name)
+        instance_id = ''
+        if not instance_view:
+            instance_id = instance_view.vm_id
+        
+        return instance_id
+
+    def get_instance_status(self, node):
+        # instance_view contains runtime information including statuses
+        resource_group_name = self.account['resource_group']
+        compute_client = ComputeManagementClient(self.credentials, self.account['subscription_id'])
+        instance_view = compute_client.virtual_machines.instance_view(resource_group_name, node.name)
+        # Look for the power state in the statuses
+        for status in instance_view.statuses:
+            if status.code.startswith('PowerState/'):
+                # Extract the state after 'PowerState/'
+                power_state = status.code.split('/')[-1]
+                return power_state.lower()
+        return 'unknown'
 
     def get_running_cost(self, verbose=True):
 
