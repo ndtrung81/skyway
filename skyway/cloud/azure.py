@@ -169,14 +169,14 @@ class AZURE(Cloud):
         walltime_in_minutes = int(pt.hour * 60 + pt.minute + pt.second/60)
 
         location_name = 'Central US'  # Replace with your desired location
-        locations = self.driver.list_locations()
-        location = next((loc for loc in locations if loc.name == location_name), None)
-        if location is None:
-            raise ValueError(f"Location '{location_name}' not found.")
+        #locations = self.driver.list_locations()
+        #location = next((loc for loc in locations if loc.name == location_name), None)
+        #if location is None:
+            #raise ValueError(f"Location '{location_name}' not found.")
 
         # authentication with public key on this machine per-user (id_rsa_azure.pub)
         # need to read in from ~/.ssh/id_rsa_azure.pub from the account .yaml file
-        auth = NodeAuthSSHKey(self.public_key)
+        #auth = NodeAuthSSHKey(self.public_key)
 
         # Initialize Azure management clients
         subscription_id = self.account['subscription_id']
@@ -184,17 +184,17 @@ class AZURE(Cloud):
         network_client = NetworkManagementClient(self.credentials, subscription_id)
         compute_client = ComputeManagementClient(self.credentials, subscription_id)
 
-        sizes = self.driver.list_sizes(location=location)
-        size = next((s for s in sizes if s.name == size_name), None)
-        if size is None:
-            raise ValueError(f"Size '{size_name}' not found.")
+        #sizes = self.driver.list_sizes(location=location)
+        #size = next((s for s in sizes if s.name == size_name), None)
+        #if size is None:
+        #    raise ValueError(f"Size '{size_name}' not found.")
 
         # select an image -- ignore image_id for now (see below when creating VM)
-        publisher = 'Canonical'
-        offer = 'UbuntuServer'
-        sku = '22.04-LTS'
-        version = 'latest'
-        image = AzureImage(version=version, publisher=publisher, sku=sku, offer=offer, driver=self.driver, location=location)
+        #publisher = 'Canonical'
+        #offer = 'UbuntuServer'
+        #sku = '22.04-LTS'
+        #version = 'latest'
+        #image = AzureImage(version=version, publisher=publisher, sku=sku, offer=offer, driver=self.driver, location=location)
 
         # Step 2: Create a resource group if it doesn't exist    
         # resource group is already created on the subscription (could move to account)
@@ -320,16 +320,14 @@ class AZURE(Cloud):
                 nodes[node_name] = [str(node.id), node_type, creation_time_str]
 
                 print(f"\nCreated instance: {node_name}")
-
-            # ssh to the node and execute a shutdown command scheduled for walltime
-            '''
-            host = node.public_ips[0]
-            user_name = os.environ['USER']
-            #print("Connecting to host: " + host)
-            print("Preparing the instance...")
-            cmd = f"ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} -t 'sudo shutdown -P +{walltime_in_minutes}' "
-            p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
-            '''
+                # ssh to the node and execute a shutdown command scheduled for walltime
+                public_ip_address = network_client.public_ip_addresses.get(
+                    resource_group_name, public_ip_name
+                )
+                ip = public_ip_address.ip_address
+                cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{ip} -t 'sudo shutdown -P +{walltime_in_minutes}' "
+                subprocess.run(cmd, shell=True, text=True, capture_output=True)
+            
 
         return nodes
 
@@ -418,11 +416,13 @@ class AZURE(Cloud):
         if isinstance(node_names, str): node_names = [node_names]
         user_name = os.environ['USER']
 
-        compute_client = ComputeManagementClient(self.credentials, self.account['subscription_id'])
+        subscription_id = self.account['subscription_id']
+        compute_client = ComputeManagementClient(self.credentials, subscription_id)
+        network_client = NetworkManagementClient(self.credentials, subscription_id)
         resource_group_name = self.account['resource_group']
 
         for vm_name in node_names:
-            node = compute_client.virtual_machines.get(self.resource_group_name, vm_name)
+            node = compute_client.virtual_machines.get(resource_group_name, vm_name)
 
             if node is None:
                 raise ValueError(f"Node {vm_name} not found.")
@@ -475,13 +475,6 @@ class AZURE(Cloud):
                 os_disk_name = node.storage_profile.os_disk.name if node.storage_profile and node.storage_profile.os_disk else None
                 data_disk_names = [disk.name for disk in node.storage_profile.data_disks] if node.storage_profile else []
 
-                compute_client.virtual_machines.begin_delete(resource_group_name, vm_name).result()
-                network_client = NetworkManagementClient(self.credentials, subscription_id)
-
-
-                # there might be resources leftover: IP, NIC, disk and VNET and subnet
-                subscription_id = self.account['subscription_id']
-                
                 # Step 1: Delete the VM
                 print(f"  Deleting VM: {vm_name}")
                 compute_client.virtual_machines.begin_delete(resource_group_name, vm_name).result()
@@ -832,10 +825,15 @@ class AZURE(Cloud):
 
         nodes = []
         total_cost = 0.0
-        for node in self.driver.list_nodes():
+
+        compute_client = ComputeManagementClient(self.credentials, self.account['subscription_id'])
+        
+        for node in compute_client.virtual_machines.list_all():
             if self.get_instance_name(node) in self.account['protected_nodes']:
                 continue
-            if node.state == "running":
+            state = self.get_instance_status(node)
+
+            if state.lower() == "running":
                 # Get the creation time of the instance
                 #creation_time_str = node.extra.get('properties')['timeCreated']  # Azure
 
@@ -852,7 +850,7 @@ class AZURE(Cloud):
                     running_time = current_time - creation_time
 
                     # get the node type
-                    node_type = node.extra.get('properties')['hardwareProfile']['vmSize']
+                    node_type = node.hardware_profile.vm_size
 
                     instance_unit_cost = self.get_unit_price_instance(node)
                     running_cost = running_time.seconds/3600.0 * instance_unit_cost
