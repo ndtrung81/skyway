@@ -75,7 +75,7 @@ class InstanceDescriptor:
             if "midway3" in self.vendor_name:
                 instanceID = self.account.get_host_ip(self.jobname)
 
-            elif "aws" in self.vendor_name or "gcp" in self.vendor_name or "oci" in self.vendor_name  or "azure" in self.vendor_name:
+            else:
                 instanceID = self.account.get_instance_ID(self.jobname)
 
             if instanceID == '':

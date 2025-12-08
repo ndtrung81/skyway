@@ -66,6 +66,8 @@ class AZURE(Cloud):
             content = f.read()
             self.public_key = content.strip()
 
+        self.private_key_file = account_path + self.account['private_key']
+
         self.usage_history = f"{account_path}usage-{account}.pkl"
 
         # load cloud.yaml under $SKYWAYROOT/etc/
@@ -82,18 +84,12 @@ class AZURE(Cloud):
                                                   client_secret=self.account['client_secret'],
                                                   tenant_id=self.account['tenant_id'])
 
-        try:
-            Azure = get_driver(Provider.AZURE_ARM)
-            self.driver = Azure(tenant_id=self.credentials._tenant_id,
-                                subscription_id=self.account['subscription_id'],
-                                key=self.credentials._client_id,
-                                secret=self.account['client_secret'])
-
-        except Exception as e:
-            print(f"An error occurred: {e}")
+        # copy ssh pem file to ~/, change the permission to 400
+        pem_file_full_path = self.private_key_file
+        self.my_ssh_private_key =  f"~/.my_azure_ssh_key.pem"
+        cmd = f"cp {pem_file_full_path} {self.my_ssh_private_key}; chmod 400 {self.my_ssh_private_key}"
+        p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
        
-        assert(self.driver != False)
-        return
 
     def list_nodes(self, show_protected_nodes=False, verbose=False):
         """Member function: list_nodes
@@ -108,7 +104,6 @@ class AZURE(Cloud):
 
         compute_client = ComputeManagementClient(self.credentials, self.account['subscription_id'])
         
-        #for node in self.driver.list_nodes():
         for node in compute_client.virtual_machines.list_all():
 
             # Get the creation time of the instance
@@ -185,16 +180,16 @@ class AZURE(Cloud):
 
         # Initialize Azure management clients
         subscription_id = self.account['subscription_id']
-        self.resource_client = ResourceManagementClient(self.credentials, subscription_id)
-        self.network_client = NetworkManagementClient(self.credentials, subscription_id)
-        self.compute_client = ComputeManagementClient(self.credentials, subscription_id)
+        resource_client = ResourceManagementClient(self.credentials, subscription_id)
+        network_client = NetworkManagementClient(self.credentials, subscription_id)
+        compute_client = ComputeManagementClient(self.credentials, subscription_id)
 
         sizes = self.driver.list_sizes(location=location)
         size = next((s for s in sizes if s.name == size_name), None)
         if size is None:
             raise ValueError(f"Size '{size_name}' not found.")
 
-        # select an image -- ignore image_id for now
+        # select an image -- ignore image_id for now (see below when creating VM)
         publisher = 'Canonical'
         offer = 'UbuntuServer'
         sku = '22.04-LTS'
@@ -204,7 +199,7 @@ class AZURE(Cloud):
         # Step 2: Create a resource group if it doesn't exist    
         # resource group is already created on the subscription (could move to account)
         resource_group_name = self.account['resource_group']   #"rg_skyway"
-        self.resource_client.resource_groups.create_or_update(resource_group_name, {"location": location_name})
+        resource_client.resource_groups.create_or_update(resource_group_name, {"location": location_name})
 
         # then for each node in the list
         for node_name in node_names:
@@ -216,18 +211,18 @@ class AZURE(Cloud):
                 "location": location_name,
                 "address_space": {"address_prefixes": ["10.0.0.0/16"]}
             }
-            self.network_client.virtual_networks.begin_create_or_update(resource_group_name, vnet_name, vnet_params).result()
+            network_client.virtual_networks.begin_create_or_update(resource_group_name, vnet_name, vnet_params).result()
 
             subnet_params = {
                 "address_prefix": "10.0.0.0/24"
             }
-            self.network_client.subnets.begin_create_or_update(resource_group_name, vnet_name, subnet_name, subnet_params).result()
+            network_client.subnets.begin_create_or_update(resource_group_name, vnet_name, subnet_name, subnet_params).result()
 
-            subnet = self.network_client.subnets.get(resource_group_name, vnet_name, subnet_name)
+            subnet = network_client.subnets.get(resource_group_name, vnet_name, subnet_name)
 
             # Create Network Security Group with inbound SSH rule
             nsg_name = f"nsg-{user_name}-{node_name}"
-            nsg = self.network_client.network_security_groups.begin_create_or_update(
+            nsg = network_client.network_security_groups.begin_create_or_update(
                 resource_group_name,
                 nsg_name,
                 NetworkSecurityGroup(location=location_name)
@@ -235,7 +230,7 @@ class AZURE(Cloud):
 
             
             # Inbound SSH rule
-            self.network_client.security_rules.begin_create_or_update(
+            network_client.security_rules.begin_create_or_update(
                 resource_group_name,
                 nsg.name,
                 "AllowSSH",
@@ -261,7 +256,7 @@ class AZURE(Cloud):
                     public_ip_allocation_method="Static",
                 )
 
-            public_ip = self.network_client.public_ip_addresses.begin_create_or_update(
+            public_ip = network_client.public_ip_addresses.begin_create_or_update(
                     resource_group_name, public_ip_name, public_ip_params
                 ).result()
 
@@ -277,10 +272,9 @@ class AZURE(Cloud):
                 "ip_configurations": [ip_config],
                 "network_security_group": NetworkSecurityGroup(id=nsg.id),
             }
-            network_interface = self.network_client.network_interfaces.begin_create_or_update(resource_group_name,
+            network_interface = network_client.network_interfaces.begin_create_or_update(resource_group_name,
                                                                                          nic_name,
                                                                                          nic_params).result()
-
             # Step 5: Create the instance
             node = None
             try:
@@ -311,7 +305,7 @@ class AZURE(Cloud):
                     tags=tags,
                 )
 
-                node = self.compute_client.virtual_machines.begin_create_or_update(resource_group_name, node_name, vm_params).result()
+                node = compute_client.virtual_machines.begin_create_or_update(resource_group_name, node_name, vm_params).result()
 
             except Exception as ex:
                 logging.info("Failed to create %s. Reason: %s" % (node_name, str(ex)))
@@ -357,11 +351,44 @@ class AZURE(Cloud):
         '''
         
 
-    def connect_node(self, node_name, separate_terminal=True):
-        pass
+    def connect_node(self, instanceID, separate_terminal=True):
+        compute_client = ComputeManagementClient(self.credentials, self.account['subscription_id'])
+        for instance in compute_client.virtual_machines.list_all():
+            if instance.vm_id == instanceID:
+                vm = instance
+                break
+
+        if vm is None:
+            print(f"No VM found for {instanceID} with user {os.environ['USER']}")
+            return
+
+        node_name = vm.name
+        host = self.get_host_ip(node_name)
+        user_name = os.environ['USER']
+        print("Connecting to host: " + host)
+
+        node_info = {
+            'private_key' : self.my_ssh_private_key,
+            'login' : f"{user_name}@{host}",
+        }
+
+        if separate_terminal == True:
+            cmd = "gnome-terminal --title='Connecting to the node' -- bash -c "
+            cmd += f" 'ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host}; exec bash' "
+            os.system(cmd)
+        else:
+            cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host}"
+            os.system(cmd)
+
+        return node_info
 
     def get_node_connection_info(self, instance_ID):
         pass
+
+    def _parse_resource_id(self, resource_id):
+        """Parse Azure resource ID to extract resource group and name"""
+        parts = resource_id.split('/')
+        return parts[4], parts[-1]  # (resource_group, resource_name)
 
     def destroy_nodes(self, node_names, need_confirmation=True):
         '''
@@ -372,20 +399,22 @@ class AZURE(Cloud):
         if isinstance(node_names, str): node_names = [node_names]
         user_name = os.environ['USER']
 
-        nodes = self.driver.list_nodes()
-        for name in node_names:
-            #node = self.driver.ex_get_node(name)
-            node = next((nd for nd in nodes if nd.name == name), None)
+        compute_client = ComputeManagementClient(self.credentials, self.account['subscription_id'])
+        resource_group_name = self.account['resource_group']
+
+        for vm_name in node_names:
+            node = compute_client.virtual_machines.get(self.resource_group_name, vm_name)
+
             if node is None:
-                raise ValueError(f"Node {name} not found.")
+                raise ValueError(f"Node {vm_name} not found.")
 
             node_user_name = self.get_instance_user_name(node)
             if  node_user_name != user_name:
-                print(f"Cannot destroy an instance {name} created by other users")
+                print(f"Cannot destroy an instance {vm_name} created by other users")
                 continue
 
-            creation_time_str = node.extra.get('properties')['timeCreated']  # Azure
-            
+            creation_time_str = node.time_created.strftime('%Y-%m-%dT%H:%M:%S.%f%z')
+
             # Convert the creation time from string to datetime object
             # Azure returns 7-digit after '.' for seconds, so need to truncate the last digit 
             # to cast into %Y-%m-%dT%H:%M:%S.%f%z format
@@ -395,7 +424,7 @@ class AZURE(Cloud):
             # Calculate the running time
             running_time = datetime.now(timezone.utc) - creation_time
             # get the node type
-            node_type = node.extra.get('properties')['hardwareProfile']['vmSize']
+            node_type = node.hardware_profile.vm_size
             instance_unit_cost = self.get_unit_price_instance(node)
             running_cost = running_time.seconds/3600.0 * instance_unit_cost
 
@@ -420,46 +449,115 @@ class AZURE(Cloud):
             df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
             df.to_pickle(self.usage_history)
 
-            # order to destroy: VM, IP, NIC, VNET
-            self.driver.destroy_node(node)
+            try:
+                # order to destroy: VM, NIC, IP, VNET
+                # Collect resource IDs before deletion
+                nic_ids = [nic.id for nic in node.network_profile.network_interfaces] if node.network_profile else []
+                os_disk_name = node.storage_profile.os_disk.name if node.storage_profile and node.storage_profile.os_disk else None
+                data_disk_names = [disk.name for disk in node.storage_profile.data_disks] if node.storage_profile else []
 
-            # there might be resources leftover: IP, NIC and VNET
-            subscription_id = self.account['subscription_id']
-            resource_client = ResourceManagementClient(self.credentials, subscription_id)
+                compute_client.virtual_machines.begin_delete(resource_group_name, vm_name).result()
+                network_client = NetworkManagementClient(self.credentials, subscription_id)
 
-            resource_group_name = self.account['resource_group']
-            public_ip_name = "my_public_ip-{}-{}".format(user_name, name)
-            nic_name = "my-nic-{}".format(user_name, name)
-            vnet_name = "vnet-{}-{}".format(user_name, name)
 
-            # 2022-11-01 is the API version, may change
-            API_VERSION = "2022-11-01"
-            ip_delete = resource_client.resources.begin_delete_by_id(
-                                "/subscriptions/{}/resourceGroups/{}/providers/{}/{}/{}".format(
-                                subscription_id,
-                                resource_group_name,
-                                "Microsoft.Network",
-                                "publicIPAddresses",
-                                public_ip_name), API_VERSION)
-            ip_delete.wait()
+                # there might be resources leftover: IP, NIC, disk and VNET and subnet
+                subscription_id = self.account['subscription_id']
+                
+                # Step 1: Delete the VM
+                print(f"  Deleting VM: {vm_name}")
+                compute_client.virtual_machines.begin_delete(resource_group_name, vm_name).result()
+                print(f"  ✓ VM deleted")
 
-            nic_delete = resource_client.resources.begin_delete_by_id(
-                                "/subscriptions/{}/resourceGroups/{}/providers/{}/{}/{}".format(
-                                subscription_id,
-                                resource_group_name,
-                                "Microsoft.Network",
-                                "networkInterfaces",
-                                nic_name), API_VERSION)
-            nic_delete.wait()
-
-            vnet_delete = resource_client.resources.begin_delete_by_id(
-                                "/subscriptions/{}/resourceGroups/{}/providers/{}/{}/{}".format(
-                                subscription_id,
-                                resource_group_name,
-                                "Microsoft.Network",
-                                "virtualNetworks",
-                                vnet_name), API_VERSION)
-            vnet_delete.wait()
+                # Step 2: Delete NICs and collect associated resources
+                public_ip_ids = []
+                nsg_ids = []
+                subnet_ids = []
+                
+                for nic_id in nic_ids:
+                    rg, nic_name = self._parse_resource_id(nic_id)
+                    
+                    # Get NIC details to find public IP, NSG, and subnet
+                    try:
+                        nic = network_client.network_interfaces.get(rg, nic_name)
+                        
+                        # Collect public IP IDs
+                        for ip_config in nic.ip_configurations:
+                            if ip_config.public_ip_address:
+                                public_ip_ids.append(ip_config.public_ip_address.id)
+                            if ip_config.subnet:
+                                subnet_ids.append(ip_config.subnet.id)
+                        
+                        # Collect NSG ID
+                        if nic.network_security_group:
+                            nsg_ids.append(nic.network_security_group.id)
+                        
+                        # Delete NIC
+                        print(f"  Deleting NIC: {nic_name}")
+                        network_client.network_interfaces.begin_delete(rg, nic_name).result()
+                        print(f"  ✓ NIC deleted")
+                    except Exception as e:
+                        print(f"  ⚠ Error deleting NIC {nic_name}: {e}")
+                
+                # Step 3: Delete Public IPs
+                for public_ip_id in public_ip_ids:
+                    rg, public_ip_name = self._parse_resource_id(public_ip_id)
+                    try:
+                        print(f"  Deleting Public IP: {public_ip_name}")
+                        network_client.public_ip_addresses.begin_delete(rg, public_ip_name).result()
+                        print(f"  ✓ Public IP deleted")
+                    except Exception as e:
+                        print(f"  ⚠ Error deleting Public IP {public_ip_name}: {e}")
+                
+                # Step 4: Delete network security groups (NSGs)
+                for nsg_id in set(nsg_ids):  # Use set to avoid duplicates
+                    rg, nsg_name = self._parse_resource_id(nsg_id)
+                    try:
+                        print(f"  Deleting NSG: {nsg_name}")
+                        network_client.network_security_groups.begin_delete(rg, nsg_name).result()
+                        print(f"  ✓ NSG deleted")
+                    except Exception as e:
+                        print(f"  ⚠ Error deleting NSG {nsg_name}: {e}")
+                
+                # Step 5: Delete Disks (OS disk and data disks)
+                if os_disk_name:
+                    try:
+                        print(f"  Deleting OS Disk: {os_disk_name}")
+                        compute_client.disks.begin_delete(resource_group_name, os_disk_name).result()
+                        print(f"  ✓ OS Disk deleted")
+                    except Exception as e:
+                        print(f"  ⚠ Error deleting OS Disk {os_disk_name}: {e}")
+                
+                for data_disk_name in data_disk_names:
+                    try:
+                        print(f"  Deleting Data Disk: {data_disk_name}")
+                        compute_client.disks.begin_delete(resource_group_name, data_disk_name).result()
+                        print(f"  ✓ Data Disk deleted")
+                    except Exception as e:
+                        print(f"  ⚠ Error deleting Data Disk {data_disk_name}: {e}")
+                
+                # Step 6: Delete Subnets and VNets (optional - only if you want to clean these up)
+                # Note: Be careful with this if other VMs share the same VNet/Subnet
+                vnet_names = set()
+                for subnet_id in subnet_ids:
+                    parts = subnet_id.split('/')
+                    vnet_name = parts[-3]  # VNet name is 3 positions before subnet name
+                    vnet_names.add(vnet_name)
+                
+                # Uncomment the following if you want to delete VNets
+                # WARNING: This will delete the entire VNet including all subnets
+                for vnet_name in vnet_names:
+                    try:
+                        print(f"  Deleting VNet: {vnet_name}")
+                        network_client.virtual_networks.begin_delete(resource_group_name, vnet_name).result()
+                        print(f"  ✓ VNet deleted")
+                    except Exception as e:
+                        print(f"  ⚠ Error deleting VNet {vnet_name}: {e}")
+                
+                print(f"✓ Successfully deleted VM and associated resources")
+            
+            except Exception as e:
+                print(f"✗ Error during deletion: {e}")
+                raise
 
     def check_valid_user(self, user_name, verbose=False):
         if user_name not in self.users:
@@ -636,11 +734,6 @@ class AZURE(Cloud):
             return self.vendor['node-types'][node_type]['price']
         return -1.0
 
-    def parse_resource_id(self, resource_id):
-        """Parse Azure resource ID to extract resource group and name"""
-        parts = resource_id.split('/')
-        return parts[4], parts[-1]  # (resource_group, resource_name)
-
     def get_host_ip(self, node_name):
         try:
             vm = None
@@ -657,12 +750,12 @@ class AZURE(Cloud):
 
             # Navigate: VM -> NIC -> Public IP
             nic_id = vm.network_profile.network_interfaces[0].id
-            rg, nic_name = self.parse_resource_id(nic_id)
+            rg, nic_name = self._parse_resource_id(nic_id)
 
             nic = network_client.network_interfaces.get(rg, nic_name)
             
             public_ip_id = nic.ip_configurations[0].public_ip_address.id
-            rg, public_ip_name = self.parse_resource_id(public_ip_id)
+            rg, public_ip_name = self._parse_resource_id(public_ip_id)
 
             public_ip = network_client.public_ip_addresses.get(rg, public_ip_name)
 
@@ -689,14 +782,16 @@ class AZURE(Cloud):
 
     def get_instance_ID(self, instance_name: str):
         """Member function: get_instance_ID
-        Get the instance ID from the instance name
+        Get the (first) instance ID from the instance name
         """
         resource_group_name = self.account['resource_group']
-        instance_view = self.compute_client.virtual_machines.instance_view(resource_group_name, instance_name)
+        compute_client = ComputeManagementClient(self.credentials, self.account['subscription_id'])
         instance_id = ''
-        if not instance_view:
-            instance_id = instance_view.vm_id
-        
+        for node in compute_client.virtual_machines.list_all():
+            if node.name == instance_name:
+                instance_id = node.vm_id
+                break
+
         return instance_id
 
     def get_instance_status(self, node):
