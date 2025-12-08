@@ -508,7 +508,7 @@ class GCP(Cloud):
             if node.name in node_names or node.id in IDs:
                 node_user_name = self.get_instance_user_name(node)
                 if  node_user_name != user_name:
-                    print(f"Cannot destroy an instance {name} created by other users")
+                    print(f"Cannot destroy an instance {node.name} created by other users")
                     continue
 
                 creation_time_str = node.extra.get('creationTimestamp')  # GCP
