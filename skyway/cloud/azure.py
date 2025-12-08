@@ -331,7 +331,7 @@ class AZURE(Cloud):
 
         return nodes
 
-    def execute(self, node_name: str, **kwargs):
+    def execute(self, instance_ID: str, **kwargs):
         '''
         execute commands on a node
         Example:
@@ -342,11 +342,25 @@ class AZURE(Cloud):
         command = ""
         for key, value in kwargs.items():
             command += value + " "
-        '''
-        cmd = "gnome-terminal --title='Connecting to the node' -- bash -c "
-        cmd += f" 'ssh -o StrictHostKeyChecking=accept-new {username}@{host}' -t '{command}' "
-        os.system(cmd)
-        '''
+
+        compute_client = ComputeManagementClient(self.credentials, self.account['subscription_id'])
+        vm = None
+        for instance in compute_client.virtual_machines.list_all():
+            if instance.vm_id == instance_ID:
+                vm = instance
+                break
+
+        if vm is None:
+            print(f"No VM found for {instance_ID} with user {os.environ['USER']}")
+            return
+
+        node_name = vm.name
+        host = self.get_host_ip(node_name)
+        user_name = os.environ['USER']
+
+        cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
+        cmd += f" 'ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host}' -t '{command}' "
+        subprocess.run(cmd, shell=True, text=True, capture_output=True)
         
 
     def connect_node(self, instance_ID, separate_terminal=True):
