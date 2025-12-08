@@ -351,15 +351,16 @@ class AZURE(Cloud):
         '''
         
 
-    def connect_node(self, instanceID, separate_terminal=True):
+    def connect_node(self, instance_ID, separate_terminal=True):
         compute_client = ComputeManagementClient(self.credentials, self.account['subscription_id'])
+        vm = None
         for instance in compute_client.virtual_machines.list_all():
-            if instance.vm_id == instanceID:
+            if instance.vm_id == instance_ID:
                 vm = instance
                 break
 
         if vm is None:
-            print(f"No VM found for {instanceID} with user {os.environ['USER']}")
+            print(f"No VM found for {instance_ID} with user {os.environ['USER']}")
             return
 
         node_name = vm.name
@@ -383,7 +384,25 @@ class AZURE(Cloud):
         return node_info
 
     def get_node_connection_info(self, instance_ID):
-        pass
+        compute_client = ComputeManagementClient(self.credentials, self.account['subscription_id'])
+        vm = None
+        for instance in compute_client.virtual_machines.list_all():
+            if instance.vm_id == instance_ID:
+                vm = instance
+                break
+
+        if vm is None:
+            print(f"No VM found for {instance_ID} with user {os.environ['USER']}")
+            return
+
+        node_name = vm.name
+        host = self.get_host_ip(node_name)
+        user_name = os.environ['USER']
+        node_info = {
+            'private_key' : self.my_ssh_private_key,
+            'login' : f"{user_name}@{host}",
+        }
+        return node_info
 
     def _parse_resource_id(self, resource_id):
         """Parse Azure resource ID to extract resource group and name"""
