@@ -11,6 +11,7 @@ from datetime import datetime, timezone, timedelta
 import io
 import logging
 import os
+import random
 import subprocess
 from tabulate import tabulate
 
@@ -292,6 +293,12 @@ class AWS(Cloud):
         username = self.vendor['username']
         region = self.account['region']
         ip_converted = ip.replace('.','-')
+
+        # set up SSH tunneling to the localhost
+        port=random.randint(15000, 30000)
+        cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new -f -N -L {port}:localhost:{port} {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com"
+        print(f"SSH tunneling to the VM using port = {port}")
+        os.system(cmd)
 
         if separate_terminal == True:
             cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "

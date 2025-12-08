@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import io
 import logging
 import os
+import random
 import subprocess
 from tabulate import tabulate
 
@@ -384,6 +385,12 @@ class AZURE(Cloud):
             'private_key' : self.my_ssh_private_key,
             'login' : f"{user_name}@{host}",
         }
+
+        # set up SSH tunneling to the localhost
+        port=random.randint(15000, 30000)
+        cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new -f -N -L {port}:localhost:{port} {user_name}@{host}"
+        print(f"port = {port}")
+        os.system(cmd)
 
         if separate_terminal == True:
             cmd = "gnome-terminal --title='Connecting to the node' -- bash -c "

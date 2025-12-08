@@ -12,6 +12,7 @@ from datetime import datetime, timezone, timedelta
 import io
 import logging
 import os
+import random
 import subprocess
 from tabulate import tabulate
 
@@ -408,7 +409,13 @@ class GCP(Cloud):
         if node is not None:
             public_ip = node.public_ips[0]
             username = os.environ['USER']
-            print("Connecting to host: " + public_ip)
+            print(f"Connecting to instance public IP address: {public_ip}")
+
+            # set up SSH tunneling to the localhost
+            port=random.randint(15000, 30000)
+            cmd = f"ssh -o StrictHostKeyChecking=accept-new -f -N -L {port}:localhost:{port} {username}@{public_ip}"
+            print(f"SSH tunneling to the VM using port = {port}")
+            os.system(cmd)
 
             if separate_terminal == True:
                 cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
