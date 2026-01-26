@@ -92,9 +92,21 @@ class Cloud():
         '''
         pass
 
-    def destroy_nodes(self, node_names, need_confirmation=True):
+    def destroy_nodes(self, node_names, ids, need_confirmation=True):
         '''
         destroy several nodes (aka instances) given a list of node names
+        '''
+        pass
+
+    def stop_nodes(self, node_names, ids, need_confirmation=True):
+        '''
+        stop several nodes (aka instances) given a list of node names
+        '''
+        pass
+
+    def restart_nodes(self, node_names, need_confirmation=True):
+        '''
+        restart several nodes (aka instances) given a list of node names
         '''
         pass
 

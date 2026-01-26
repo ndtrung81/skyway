@@ -206,7 +206,7 @@ class GCP(Cloud):
         nodes = []
         current_time = datetime.now(timezone.utc)
         for node in self.driver.list_nodes():
-            if node.state != 'running':
+            if node.state == 'terminated':
                 continue
 
             # Get the creation time of the instance
@@ -434,6 +434,130 @@ class GCP(Cloud):
         }
         return node_info
 
+    def stop_nodes(self, IDs=[], node_names=[], need_confirmation=True):
+        '''
+        stop all the nodes (instances) given the list of node names
+        NOTE: should store the running cost and time before terminating the node(s)
+        node_names = list of node names as strings
+        '''
+        if isinstance(node_names, str): node_names = [node_names]
+        if isinstance(IDs, str): IDs = [IDs]
+
+        user_name = os.environ['USER']
+
+        for node in self.driver.list_nodes():
+            if node.state != "running":
+                continue
+            
+            if node.name in node_names or node.id in IDs:
+                node_user_name = self.get_instance_user_name(node)
+                if  node_user_name != user_name:
+                    print(f"Cannot stop an instance {node.name} created by other users")
+                    continue
+
+                creation_time_str = node.extra.get('creationTimestamp')  # GCP
+                # Convert the creation time from string to datetime object
+                creation_time = datetime.strptime(creation_time_str, '%Y-%m-%dT%H:%M:%S.%f%z')
+                current_time = datetime.now(timezone.utc)
+                running_time = current_time - creation_time
+                instance_unit_cost = self.get_unit_price_instance(node)
+                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+
+                if need_confirmation == True:
+                    response = input(f"Do you want to stop {node.name} (running cost ${running_cost})? NOTE: Data on the node will be removed. (y/n) ")
+                    if response != 'y':
+                        continue
+
+                self.driver.ex_stop_node(node)
+
+                # record the running time and cost
+                running_time = current_time - creation_time
+                instance_unit_cost = self.get_unit_price_instance(node)
+                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+
+                # store the record into the database
+                data = [node_user_name, node.id, node.size, creation_time, current_time, running_cost, remaining_balance]
+
+                if os.path.isfile(self.usage_history):
+                    df = pd.read_pickle(self.usage_history)
+                else:
+                    df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+                if node.id not in df['InstanceID'].values:
+                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                else:
+                    df.loc[df['InstanceID'] == node.id, 'End'] = current_time
+                df.to_pickle(self.usage_history)
+
+    def restart_nodes(self, IDs=[], node_names=[], need_confirmation=True):
+        '''
+        restart all the nodes (instances) given the list of node names
+        node_names = list of node names as strings
+        '''
+        if isinstance(node_names, str): node_names = [node_names]
+        if isinstance(IDs, str): IDs = [IDs]
+
+        user_name = os.environ['USER']
+
+        for node in self.driver.list_nodes():
+            if node.state != "stopped":
+                continue
+
+            if node.name in node_names or node.id in IDs:
+                node_user_name = self.get_instance_user_name(node)
+                if  node_user_name != user_name:
+                    print(f"Cannot restart an instance {node.name} created by other users")
+                    continue
+
+                user_budget = self.get_budget(user_name=user_name, verbose=False)
+                usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+                running_cost = self.get_running_cost(verbose=False)
+                usage = usage + running_cost
+                remaining_balance = user_budget - usage
+                unit_price = self.get_unit_price_instance(node)
+                if need_confirmation == True:
+                    print(f"User budget: ${user_budget:.3f}")
+                    print(f"+ Usage    : ${usage:.3f}")
+                    print(f"+ Available: ${remaining_balance:.3f}")
+                
+                    response = input(f"Do you want to create an instance of type {node.size} (${unit_price}/hr)? (y/n) ")
+                    if response == 'n':
+                        return
+
+                print(Fore.BLUE + f"Allocating an instance ...", end=" ")
+
+                self.driver.ex_start_node(node)
+
+                self.driver.wait_until_running([node])
+
+                # record node_type, creation time
+                creation_time_str = node.extra.get('creationTimestamp')
+                #print(f"Creation timestamp: {creation_time_str}")
+                creation_time = datetime.strptime(creation_time_str, '%Y-%m-%dT%H:%M:%S.%f%z')
+
+                print(f'\nCreated instance: {node.name}')
+
+                current_time = datetime.now(timezone.utc)
+                running_time = current_time - creation_time
+                instance_unit_cost = self.get_unit_price_instance(node)
+                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+
+                # store the record into the database
+                data = [node_user_name, node.id, node.size, creation_time, current_time, running_cost, remaining_balance]
+
+                if os.path.isfile(self.usage_history):
+                    df = pd.read_pickle(self.usage_history)
+                else:
+                    df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+                if node.id not in df['InstanceID'].values:
+                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                else:
+                    df.loc[df['InstanceID'] == node.id, 'End'] = current_time
+                df.to_pickle(self.usage_history)
+
     def get_node_connection_info(self, node_id):
         node = None
         for node in self.driver.list_nodes():
@@ -552,8 +676,7 @@ class GCP(Cloud):
                 else:
                     df.loc[df['InstanceID'] == node.id, 'End'] = current_time
                 df.to_pickle(self.usage_history)
-            
-        return
+
    
     def get_running_nodes(self, verbose=False):
         """Member function: running_nodes

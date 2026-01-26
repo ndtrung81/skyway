@@ -66,7 +66,7 @@ class AWS(Cloud):
         self.onpremises = False
 
         # using_trusted_agent = False means that no use of master account key and secret as defined in cloud.yaml
-        self.using_trusted_agent = False
+        self.using_trusted_agent = self.vendor.get('using_trusted_agent', False)
         if self.using_trusted_agent == False:
             # This is how the existing skyway creates the ec2 resource without master for rcc-aws
             self.ec2 = boto3.resource('ec2',
