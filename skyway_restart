@@ -28,7 +28,6 @@ class InstanceDescriptor:
         self.jobname = jobname
         self.account_name = account_name
         self.vendor_name = vendor_name
-
         self.node_type = ""
         self.walltime = ""
         if node_type is not None:
@@ -52,9 +51,9 @@ class InstanceDescriptor:
 
     def restartJob(self, node_names = [], instance_id=""):
         if instance_id == "":
-            self.account.restart_nodes(node_names=node_names, need_confirmation=True)
+            self.account.restart_nodes(node_names=node_names, need_confirmation=True, walltime=self.walltime)
         else:
-            self.account.restart_nodes(IDs=[instance_id], need_confirmation=True)
+            self.account.restart_nodes(IDs=[instance_id], need_confirmation=True, walltime=self.walltime)
 
     def getBalance(self):
         # retrieve from database for the given account
@@ -87,10 +86,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=msg)
     parser.add_argument('-A', '--account', dest='account', default="", help="Account name")
     parser.add_argument('-i', '--instance-id', dest='instance_id', default="", help="Instance ID")
+    parser.add_argument('-t', '--time', dest='walltime', default="", help="Walltime")
     parser.add_argument(dest='jobname', nargs='*', default="", help="Job name to cancel")
 
     args = parser.parse_args()    
     account_name = args.account
+    walltime = args.walltime
     provider = ""
     instance_id = args.instance_id
     if len(args.jobname) > 0:
@@ -127,6 +128,6 @@ if __name__ == "__main__":
 
     # stop the job
     node_names = [job_name]
-    instanceDescriptor.restartJob(node_names=node_names, instance_id=instance_id)
+    instanceDescriptor.restartJob(node_names=node_names, instance_id=instance_id, walltime=walltime)
 
         

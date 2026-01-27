@@ -490,7 +490,7 @@ class GCP(Cloud):
                     df.loc[df['InstanceID'] == node.id, 'End'] = current_time
                 df.to_pickle(self.usage_history)
 
-    def restart_nodes(self, IDs=[], node_names=[], need_confirmation=True):
+    def restart_nodes(self, IDs=[], node_names=[], need_confirmation=True, walltime = None):
         '''
         restart all the nodes (instances) given the list of node names
         node_names = list of node names as strings
@@ -499,7 +499,15 @@ class GCP(Cloud):
         if isinstance(IDs, str): IDs = [IDs]
 
         user_name = os.environ['USER']
+        if walltime is None or walltime == "":
+            walltime_str = "00:30:00"
+        else:
+            walltime_str = walltime
 
+        # shutdown the instance after the walltime (in minutes)
+        pt = datetime.strptime(walltime_str, "%H:%M:%S")
+        walltime_in_minutes = int(pt.hour * 60 + pt.minute + pt.second/60)
+        
         for node in self.driver.list_nodes():
             if node.state != "stopped":
                 continue
@@ -538,24 +546,22 @@ class GCP(Cloud):
 
                 print(f'\nCreated instance: {node.name}')
 
-                current_time = datetime.now(timezone.utc)
-                running_time = current_time - creation_time
+                running_time = timedelta(hours=pt.hour, minutes=pt.minute, seconds=pt.second)
                 instance_unit_cost = self.get_unit_price_instance(node)
-                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                projected_running_cost = running_time.seconds/3600.0 * instance_unit_cost
                 usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+                end_time = creation_time + running_time
 
                 # store the record into the database
-                data = [node_user_name, node.id, node.size, creation_time, current_time, running_cost, remaining_balance]
+                data = [user_name, node.id, node.size,
+                        creation_time_str, end_time, projected_running_cost, remaining_balance]
 
                 if os.path.isfile(self.usage_history):
                     df = pd.read_pickle(self.usage_history)
                 else:
                     df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
 
-                if node.id not in df['InstanceID'].values:
-                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
-                else:
-                    df.loc[df['InstanceID'] == node.id, 'End'] = current_time
+                df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
                 df.to_pickle(self.usage_history)
 
     def get_node_connection_info(self, node_id):

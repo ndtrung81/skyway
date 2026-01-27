@@ -74,7 +74,8 @@ class AWS(Cloud):
                                        aws_secret_access_key = self.account['secret_access_key'],
                                        region_name = self.account['region'])
         else:
-            # This is how the testing skyway (midway3 VM) for rcc-aws: uses the IAM rcc-skyway as a trusted agent from the RCC-Skyway account (391009850283)
+            # This is how the testing skyway (midway3 VM) for rcc-aws (account id 391009850283, PI Test): uses the IAM rcc-skyway as a trusted agent from the RCC-Skyway account (345587500613)
+            # the ITS created a cloud account for the PI in the RCC Organizational Unit (OU) which specifies the IAM role rcc-skyway to manage this PI account.
             self.client = boto3.client('sts',
                 aws_access_key_id = self.vendor['master_access_key_id'],
                 aws_secret_access_key = self.vendor['master_secret_access_key'])
