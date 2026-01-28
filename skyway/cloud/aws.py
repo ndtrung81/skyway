@@ -66,7 +66,7 @@ class AWS(Cloud):
         self.onpremises = False
 
         # using_trusted_agent = False means that no use of master account key and secret as defined in cloud.yaml
-        self.using_trusted_agent = self.vendor.get('using_trusted_agent', False)
+        self.using_trusted_agent = self.account.get('using_trusted_agent', False)
         if self.using_trusted_agent == False:
             # This is how the existing skyway creates the ec2 resource without master for rcc-aws
             self.ec2 = boto3.resource('ec2',
@@ -95,10 +95,10 @@ class AWS(Cloud):
             EC2 = get_driver(Provider.EC2)
             self.driver = EC2(self.account['access_key_id'], self.account['secret_access_key'], self.account['region'])
         
-        # copy ssh pem file to ~/, change the permission to 400
+        # copy ssh pem file to ~/, change the permission to 600
         pem_file_full_path = account_path + self.account['key_name'] + '.pem'
         self.my_ssh_private_key =  f"~/.my_aws_ssh_key.pem"
-        cmd = f"cp {pem_file_full_path} {self.my_ssh_private_key}; chmod 400 {self.my_ssh_private_key}"
+        cmd = f"cp {pem_file_full_path} {self.my_ssh_private_key}; chmod 600 {self.my_ssh_private_key}"
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
        
@@ -165,6 +165,9 @@ class AWS(Cloud):
             print(f"User budget: ${user_budget:.3f}")
             print(f"+ Usage    : ${usage:.3f}")
             print(f"+ Available: ${remaining_balance:.3f}")
+            if remaining_balance <= 0:
+                print("The current budget is not sufficient for this request.")
+                return
             response = input(f"Do you want to create an instance of type {node_type} (${unit_price}/hr)? (y/n) ")
             if response == 'n':
                 return

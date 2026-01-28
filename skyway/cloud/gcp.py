@@ -257,7 +257,9 @@ class GCP(Cloud):
             print(f"User budget: ${user_budget:.3f}")
             print(f"+ Usage    : ${usage:.3f}")
             print(f"+ Available: ${remaining_balance:.3f}")
-        
+            if remaining_balance <= 0:
+                print("The current budget is not sufficient for this request.")
+                return
             response = input(f"Do you want to create an instance of type {node_type} (${unit_price}/hr)? (y/n) ")
             if response == 'n':
                 return

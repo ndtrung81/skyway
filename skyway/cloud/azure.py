@@ -85,10 +85,10 @@ class AZURE(Cloud):
                                                   client_secret=self.account['client_secret'],
                                                   tenant_id=self.account['tenant_id'])
 
-        # copy ssh pem file to ~/, change the permission to 400
+        # copy ssh pem file to ~/, change the permission to 600
         pem_file_full_path = self.private_key_file
         self.my_ssh_private_key =  f"~/.my_azure_ssh_key.pem"
-        cmd = f"cp {pem_file_full_path} {self.my_ssh_private_key}; chmod 400 {self.my_ssh_private_key}"
+        cmd = f"cp {pem_file_full_path} {self.my_ssh_private_key}; chmod 600 {self.my_ssh_private_key}"
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
        
 
@@ -149,6 +149,9 @@ class AZURE(Cloud):
             print(f"User budget: ${user_budget:.3f}")
             print(f"+ Usage    : ${usage:.3f}")
             print(f"+ Available: ${remaining_balance:.3f}")
+            if remaining_balance <= 0:
+                print("The current budget is not sufficient for this request.")
+                return
             response = input(f"Do you want to create an instance of type {node_type} (${unit_price}/hr)? (y/n) ")
             if response == 'n':
                 return
