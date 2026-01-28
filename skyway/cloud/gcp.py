@@ -531,7 +531,7 @@ class GCP(Cloud):
                     print(f"+ Usage    : ${usage:.3f}")
                     print(f"+ Available: ${remaining_balance:.3f}")
                 
-                    response = input(f"Do you want to create an instance of type {node.size} (${unit_price}/hr)? (y/n) ")
+                    response = input(f"Do you want to restart the instance of type {node.size} (${unit_price}/hr)? (y/n) ")
                     if response == 'n':
                         return
 
@@ -546,7 +546,7 @@ class GCP(Cloud):
                 #print(f"Creation timestamp: {creation_time_str}")
                 creation_time = datetime.strptime(creation_time_str, '%Y-%m-%dT%H:%M:%S.%f%z')
 
-                print(f'\nCreated instance: {node.name}')
+                print(f'\nInstance {node.name} is up.')
 
                 running_time = timedelta(hours=pt.hour, minutes=pt.minute, seconds=pt.second)
                 instance_unit_cost = self.get_unit_price_instance(node)

@@ -124,10 +124,10 @@ if __name__ == "__main__":
         quit
 
     # create an instance descriptor (like with the dashboard)
-    instanceDescriptor = InstanceDescriptor(job_name, account_name, vendor_name)
+    instanceDescriptor = InstanceDescriptor(job_name, account_name, vendor_name, walltime)
 
     # stop the job
     node_names = [job_name]
-    instanceDescriptor.restartJob(node_names=node_names, instance_id=instance_id, walltime=walltime)
+    instanceDescriptor.restartJob(node_names=node_names, instance_id=instance_id)
 
         

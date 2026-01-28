@@ -160,7 +160,8 @@ class AWS(Cloud):
         running_cost = self.get_running_cost(verbose=False)
         usage = usage + running_cost
         remaining_balance = user_budget - usage
-        unit_price = self.vendor['node-types'][node_type]['price']
+        unit_price = self.get_unit_price_instance(instance)
+        
         if need_confirmation == True:
             print(f"User budget: ${user_budget:.3f}")
             print(f"+ Usage    : ${usage:.3f}")
@@ -650,7 +651,8 @@ class AWS(Cloud):
                 running_cost = self.get_running_cost(verbose=False)
                 usage = usage + running_cost
                 remaining_balance = user_budget - usage
-                unit_price = self.vendor['node-types'][node_type]['price']
+                node_type = instance.instance_type
+                unit_price = self.get_unit_price_instance(instance)
                 if need_confirmation == True:
                     print(f"User budget: ${user_budget:.3f}")
                     print(f"+ Usage    : ${usage:.3f}")
@@ -658,7 +660,7 @@ class AWS(Cloud):
                     if remaining_balance <= 0:
                         print("The current budget is not sufficient for this request.")
                         return
-                    response = input(f"Do you want to create an instance of type {node_type} (${unit_price}/hr)? (y/n) ")
+                    response = input(f"Do you want to restart the instance of type {node_type} (${unit_price}/hr)? (y/n) ")
                     if response == 'n':
                         return
 
@@ -667,7 +669,8 @@ class AWS(Cloud):
                 instance.start()
                 instance.wait_until_running()
 
-
+                node_name = self.get_instance_name(instance)
+                print(f'\nInstance {node_name} is up.')
 
     def check_valid_user(self, user_name, verbose=False):
         if user_name not in self.users:
