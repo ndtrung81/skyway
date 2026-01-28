@@ -124,7 +124,7 @@ class AWS(Cloud):
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.total_seconds()/3600.0 * instance_unit_cost
                 instance_user_name = self.get_instance_user_name(instance)
-                
+
                 nodes.append([self.get_instance_name(instance),
                               instance_user_name,
                               instance.state['Name'],
@@ -491,6 +491,182 @@ class AWS(Cloud):
         #print("Waiting for the instances to stop, please be patient...")
         #for instance in instances:
         #    instance.wait_until_terminated()
+
+    def stop_nodes(self, IDs=[], node_names=[], need_confirmation=True):
+        '''
+        stop all the nodes (instances) given the list of node names
+        NOTE: should store the running cost and time before stopping the node(s)
+        node_names = list of node names as strings
+        '''
+        if isinstance(node_names, str): node_names = [node_names]
+        if isinstance(IDs, str): IDs = [IDs]
+
+        user_name = os.environ['USER']
+        
+        if node_names is None and IDs is None:
+            raise ValueError(f"node_names and IDs cannot be both empty.")
+
+        instances = []
+        if len(node_names) > 0:
+
+            for name in node_names:
+                if name in self.account['protected_nodes']:
+                    continue
+                
+                avail_instances = self.get_instances(filters = [{
+                    "Name" : "instance-state-name",
+                    "Values" : ["running"]
+                }])
+                
+                instance = next((inst for inst in avail_instances if self.get_instance_name(inst) == name), None)
+                if instance is None:
+                    raise ValueError(f"Instance '{name}' not found.")
+
+                running_time = datetime.now(timezone.utc) - instance.launch_time
+                instance_unit_cost = self.get_unit_price_instance(instance)
+                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                instance_user_name = self.get_instance_user_name(instance)
+                if instance_user_name != user_name:
+                    print(f"Cannot stop an instance {name} created by other users")
+                    continue
+
+                instance.stop()
+   
+                # record the running time and cost
+                end_time = datetime.now(timezone.utc)
+                running_time = end_time - instance.launch_time
+                instance_unit_cost = self.get_unit_price_instance(instance)
+                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+
+                # store the record into the database
+                data = [instance_user_name, instance.instance_id, instance.instance_type,
+                        instance.launch_time, end_time, running_cost, remaining_balance]
+
+                if os.path.isfile(self.usage_history):
+                    df = pd.read_pickle(self.usage_history)
+                else:
+                    df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+                if instance.instance_id not in df['InstanceID'].values:
+                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                else:
+                    df.loc[df['InstanceID'] == instance.instance_id, 'End'] = end_time
+                df.to_pickle(self.usage_history)
+
+                instances.append(instance)
+        else:
+
+            for ID in IDs:
+                instance = self.ec2.Instance(ID)
+                if self.get_instance_name(instance) in self.account['protected_nodes']:
+                    continue
+
+                instance_user_name = self.get_instance_user_name(instance)
+                if instance_user_name != user_name:
+                    print(f"Cannot stop an instance {name} from other users")
+                    continue
+
+                if instance is None:
+                    raise ValueError(f"Instance '{instance.name}' not found.")
+
+                running_time = datetime.now(timezone.utc) - instance.launch_time
+                instance_unit_cost = self.get_unit_price_instance(instance)
+                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+
+                # record the running time and cost
+                end_time = datetime.now(timezone.utc)
+                running_time = end_time - instance.launch_time
+                instance_unit_cost = self.get_unit_price_instance(instance)
+                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+
+                # store the record into the database
+                data = [instance_user_name, instance.instance_id, instance.instance_type,
+                        instance.launch_time, end_time, running_cost, remaining_balance]
+
+                if os.path.isfile(self.usage_history):
+                    df = pd.read_pickle(self.usage_history)
+                else:
+                    df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+                if instance.instance_id not in df['InstanceID'].values:
+                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                else:
+                    df.loc[df['InstanceID'] == instance.instance_id, 'End'] = end_time
+                df.to_pickle(self.usage_history)
+
+                instance.stop()
+                instances.append(instance)
+
+    def restart_nodes(self, IDs=[], node_names=[], need_confirmation=True, walltime = None):
+        '''
+        restart all the nodes (instances) given the list of node names
+        node_names = list of node names as strings
+        '''
+        if isinstance(node_names, str): node_names = [node_names]
+        if isinstance(IDs, str): IDs = [IDs]
+
+        user_name = os.environ['USER']
+        if walltime is None or walltime == "":
+            walltime_str = "00:30:00"
+        else:
+            walltime_str = walltime
+
+        # shutdown the instance after the walltime (in minutes)
+        pt = datetime.strptime(walltime_str, "%H:%M:%S")
+        walltime_in_minutes = int(pt.hour * 60 + pt.minute + pt.second/60)
+        
+        if node_names is None and IDs is None:
+            raise ValueError(f"node_names and IDs cannot be both empty.")
+
+        avail_instances = self.get_instances(filters = [{
+                "Name" : "instance-state-name",
+                "Values" : ["stopped"]
+            }])
+
+        if len(node_names) > 0:
+            for name in nodenames:
+                instance = next((inst for inst in avail_instances if self.get_instance_name(inst) == name), None)
+                if instance is None:
+                    raise ValueError(f"Instance '{name}' not found.")
+                # start the instance with budget allowed as below with IDs...
+        else:
+            for ID in IDs:
+                instance = self.ec2.Instance(ID)
+                if self.get_instance_name(instance) in self.account['protected_nodes']:
+                    continue
+
+                instance_user_name = self.get_instance_user_name(instance)
+                if instance_user_name != user_name:
+                    print(f"Cannot restart an instance {name} from other users")
+                    continue
+
+                if instance is None:
+                    raise ValueError(f"Instance '{instance.name}' not found.")
+                
+                user_budget = self.get_budget(user_name=user_name, verbose=False)
+                usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+                running_cost = self.get_running_cost(verbose=False)
+                usage = usage + running_cost
+                remaining_balance = user_budget - usage
+                unit_price = self.vendor['node-types'][node_type]['price']
+                if need_confirmation == True:
+                    print(f"User budget: ${user_budget:.3f}")
+                    print(f"+ Usage    : ${usage:.3f}")
+                    print(f"+ Available: ${remaining_balance:.3f}")
+                    if remaining_balance <= 0:
+                        print("The current budget is not sufficient for this request.")
+                        return
+                    response = input(f"Do you want to create an instance of type {node_type} (${unit_price}/hr)? (y/n) ")
+                    if response == 'n':
+                        return
+
+                print(Fore.BLUE + f"Allocating an instance ...", end=" ")
+
+                instance.start()
+                instance.wait_until_running()
+
 
 
     def check_valid_user(self, user_name, verbose=False):
