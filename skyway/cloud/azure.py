@@ -138,6 +138,10 @@ class AZURE(Cloud):
         return nodes, output_str            
 
     def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None, image_id = ""):
+
+        if node_type not in self.vendor['node-types']:
+            raise Exception(f'Node type {node_type} is not available in this account.')
+
         user_name = os.environ['USER']
         user_budget = self.get_budget(user_name=user_name, verbose=False)
         usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
@@ -157,7 +161,7 @@ class AZURE(Cloud):
                 return
 
         count = len(node_names)
-        print(Fore.BLUE + f"Allocating {count} instance ...", end=" ")
+        print(Fore.BLUE + f"Allocating {count} instance ...", end="\n")
 
         nodes = {}
         node_cfg = self.vendor['node-types'][node_type]

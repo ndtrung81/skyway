@@ -138,6 +138,9 @@ class OCI(Cloud):
         
         Return: a dictionary of instance ID (i.e., names) for created instances.
         """
+        if node_type not in self.vendor['node-types']:
+            raise Exception(f'Node type {node_type} is not available in this account.')
+
         user_name = os.environ['USER']
         user_budget = self.get_budget(user_name=user_name, verbose=False)
         usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
@@ -158,7 +161,7 @@ class OCI(Cloud):
 
         count = len(node_names)      
         node_name = node_names[0]
-        print(Fore.BLUE + f"Allocating {count} instance ...", end=" ")
+        print(Fore.BLUE + f"Allocating {count} instance ...", end="\n")
 
         # ImageID and KeyName provided by the account then user can connect to the running node
         #   if ImageID is from the vendor, KeyName from the account, ssh connection is denied

@@ -246,6 +246,9 @@ class GCP(Cloud):
 
         Return: a dictionary of instance ID (i.e., names) for created instances.
         """
+        if node_type not in self.vendor['node-types']:
+            raise Exception(f'Node type {node_type} is not available in this account.')
+
         user_name = os.environ['USER']
         user_budget = self.get_budget(user_name=user_name, verbose=False)
         usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
@@ -343,7 +346,7 @@ class GCP(Cloud):
                 node_type = node_cfg['name']
                 nodes[node_name] = [node_type, creation_time_str, node.public_ips[0]]
 
-                print(f'\nCreated instance: {node.name}')
+                print(f'\nCreated instance: {node.name}\n')
 
                 # ssh to the node and execute a shutdown command scheduled for walltime
                 host = node.public_ips[0]
@@ -535,7 +538,7 @@ class GCP(Cloud):
                     if response == 'n':
                         return
 
-                print(Fore.BLUE + f"Allocating an instance ...", end=" ")
+                print(Fore.BLUE + f"Allocating an instance ...\n", end=" ")
 
                 self.driver.ex_start_node(node)
 
