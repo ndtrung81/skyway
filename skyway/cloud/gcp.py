@@ -756,7 +756,7 @@ class GCP(Cloud):
         
          - node: a node object
         """
-        
+
         return node.name
 
     def get_instance_ID(self, instance_name: str):

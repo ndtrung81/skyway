@@ -163,8 +163,8 @@ class AWS(Cloud):
         running_cost = self.get_running_cost(verbose=False)
         usage = usage + running_cost
         remaining_balance = user_budget - usage
-        unit_price = self.get_unit_price_instance(instance)
-        
+        unit_price = self.vendor['node-types'][node_type]['price']
+
         if need_confirmation == True:
             print(f"User budget: ${user_budget:.3f}")
             print(f"+ Usage    : ${usage:.3f}")
