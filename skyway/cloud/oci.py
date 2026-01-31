@@ -92,7 +92,6 @@ class OCI(Cloud):
                 (1) instance name (2) state (3) type (4) identifier
         """
         
-        user_name = os.environ['USER']
         instances = self.get_instances()
         nodes = []
 
@@ -109,6 +108,7 @@ class OCI(Cloud):
 
                 public_ip_address = self.get_host_ip(instance.id)
                 instance_type = instance.shape
+                user_name = self.get_instance_user_name(instance)
                 nodes.append([instance.display_name,
                               user_name,
                               instance.lifecycle_state,
@@ -388,52 +388,214 @@ class OCI(Cloud):
         running_instances = [instance for instance in instance_list if instance.lifecycle_state == 'RUNNING']
 
         # Terminate instances with the given names
-        for node in node_names:
-            for instance in running_instances:
-                if instance.display_name == node:
+        
+        for instance in running_instances:
+            if instance.display_name in node_names or instance.id in IDs:
+                user_name = self.get_instance_user_name(instance)
 
-                    running_time = datetime.now(timezone.utc) - instance.time_created
-                    instance_unit_cost = self.get_unit_price_instance(instance)
-                    running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                if user_name != os.environ['USER']:
+                    print(f"Cannot terminate an instance {instance.display_name} created by other users")
+                    continue
 
-                    response = input(f"Do you want to terminate the node {instance.id} (running cost ${running_cost:0.5f})? NOTE: Data on the node will be removed. (y/n) ")
-                    if response != 'y':
-                        continue
+                running_time = datetime.now(timezone.utc) - instance.time_created
+                instance_unit_cost = self.get_unit_price_instance(instance)
+                running_cost = running_time.seconds/3600.0 * instance_unit_cost
 
-                    args = {
-                        'preserve_boot_volume': False,
-                        'preserve_data_volumes_created_at_launch': False,
-                    }
+                response = input(f"Do you want to terminate the node {instance.id} (running cost ${running_cost:0.5f})? NOTE: Data on the node will be removed. (y/n) ")
+                if response != 'y':
+                    continue
 
-                    self.compute_client_composite_operations.terminate_instance_and_wait_for_state(
-                        instance.id,
-                        operation_kwargs=args,
-                        wait_for_states=[oci.core.models.Instance.LIFECYCLE_STATE_TERMINATED]
-                    )
+                args = {
+                    'preserve_boot_volume': False,
+                    'preserve_data_volumes_created_at_launch': False,
+                }
 
-                    # record the running time and cost
-                    end_time = datetime.now(timezone.utc)
-                    running_time = end_time - instance.time_created
-                    instance_unit_cost = self.get_unit_price_instance(instance)
-                    running_cost = running_time.seconds/3600.0 * instance_unit_cost
-                    usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+                self.compute_client_composite_operations.terminate_instance_and_wait_for_state(
+                    instance.id,
+                    operation_kwargs=args,
+                    wait_for_states=[oci.core.models.Instance.LIFECYCLE_STATE_TERMINATED]
+                )
 
-                    # store the record into the database
-                    instance_type = instance.shape
-                    data = [user_name, instance.id, instance_type,
-                            instance.time_created, end_time, running_cost, remaining_balance]
+                # record the running time and cost
+                end_time = datetime.now(timezone.utc)
+                running_time = end_time - instance.time_created
+                instance_unit_cost = self.get_unit_price_instance(instance)
+                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
 
-                    if os.path.isfile(self.usage_history):
-                        df = pd.read_pickle(self.usage_history)
-                    else:
-                        df = pd.DataFrame([], columns=['Name','User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+                # store the record into the database
+                instance_type = instance.shape
+                data = [user_name, instance.id, instance_type,
+                        instance.time_created, end_time, running_cost, remaining_balance]
 
-                    if instance.id not in df['InstanceID'].values:
-                        df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
-                    else:
-                        df.loc[df['InstanceID'] == instance.id, 'End'] = end_time
-                    df.to_pickle(self.usage_history)
+                if os.path.isfile(self.usage_history):
+                    df = pd.read_pickle(self.usage_history)
+                else:
+                    df = pd.DataFrame([], columns=['Name','User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
 
+                if instance.id not in df['InstanceID'].values:
+                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                else:
+                    df.loc[df['InstanceID'] == instance.id, 'End'] = end_time
+                df.to_pickle(self.usage_history)
+
+    def stop_nodes(self, IDs=[], node_names=[], need_confirmation=True):
+        '''
+        stop all the nodes (instances) given the list of node names
+        NOTE: should store the running cost and time before terminating the node(s)
+        node_names = list of node names as strings
+        '''
+        if isinstance(node_names, str): node_names = [node_names]
+        if isinstance(IDs, str): IDs = [IDs]
+
+        user_name = os.environ['USER']
+
+        if node_names is None and IDs is None:
+            raise ValueError(f"node_names and IDs cannot be both empty.")
+
+        # List all instances in the compartment
+        instance_list = oci.pagination.list_call_get_all_results(
+            self.compute_client.list_instances,
+            self.account['compartment_id']
+        ).data
+
+        # Filter the instances to get only the running ones
+        running_instances = [instance for instance in instance_list if instance.lifecycle_state == 'RUNNING']
+
+        # Stop instances with the given IDs
+        
+        for instance in running_instances:
+            if instance.id in IDs or instance.display_name in node_names:
+                user_name = self.get_instance_user_name(instance)
+                if user_name != os.environ['USER']:
+                    print(f"Cannot stop an instance {instance.display_name} created by other users")
+                    continue
+
+                running_time = datetime.now(timezone.utc) - instance.time_created
+                instance_unit_cost = self.get_unit_price_instance(instance)
+                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+
+                args = {
+                    'preserve_boot_volume': True,
+                    'preserve_data_volumes_created_at_launch': True,
+                }
+
+                self.compute_client_composite_operations.stop_instance_and_wait_for_state(
+                    instance.id,
+                    operation_kwargs=args,
+                    wait_for_states=[oci.core.models.Instance.LIFECYCLE_STATE_STOPPED]
+                )
+
+                # record the running time and cost
+                end_time = datetime.now(timezone.utc)
+                running_time = end_time - instance.time_created
+                instance_unit_cost = self.get_unit_price_instance(instance)
+                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+
+                # store the record into the database
+                instance_type = instance.shape
+                data = [user_name, instance.id, instance_type,
+                        instance.time_created, end_time, running_cost, remaining_balance]
+
+                if os.path.isfile(self.usage_history):
+                    df = pd.read_pickle(self.usage_history)
+                else:
+                    df = pd.DataFrame([], columns=['Name','User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+                if instance.id not in df['InstanceID'].values:
+                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                else:
+                    df.loc[df['InstanceID'] == instance.id, 'End'] = end_time
+                df.to_pickle(self.usage_history)
+
+        
+
+    def restart_nodes(self, IDs=[], node_names=[], need_confirmation=True, walltime = None):
+        '''
+        restart all the nodes (instances) given the list of node names
+        node_names = list of node names as strings
+        '''
+        if isinstance(node_names, str): node_names = [node_names]
+        if isinstance(IDs, str): IDs = [IDs]
+
+        user_name = os.environ['USER']
+        if walltime is None or walltime == "":
+            walltime_str = "00:30:00"
+        else:
+            walltime_str = walltime
+
+        # shutdown the instance after the walltime (in minutes)
+        pt = datetime.strptime(walltime_str, "%H:%M:%S")
+        walltime_in_minutes = int(pt.hour * 60 + pt.minute + pt.second/60)
+
+        # List all instances in the compartment
+        instance_list = oci.pagination.list_call_get_all_results(
+            self.compute_client.list_instances,
+            self.account['compartment_id']
+        ).data
+
+        # Filter the instances to get only the stopped ones
+        instances = [instance for instance in instance_list if instance.lifecycle_state == 'STOPPED']
+
+        for instance in instances:
+            
+            if instance.name in node_names or instance.id in IDs:
+                node_user_name = self.get_instance_user_name(instance)
+                if  node_user_name != user_name:
+                    print(f"Cannot restart an instance {instance.name} created by other users")
+                    continue
+
+                user_budget = self.get_budget(user_name=user_name, verbose=False)
+                usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+                running_cost = self.get_running_cost(verbose=False)
+                usage = usage + running_cost
+                remaining_balance = user_budget - usage
+                unit_price = self.get_unit_price_instance(instance)
+                if need_confirmation == True:
+                    print(f"User budget: ${user_budget:.3f}")
+                    print(f"+ Usage    : ${usage:.3f}")
+                    print(f"+ Available: ${remaining_balance:.3f}")
+                
+                    response = input(f"Do you want to restart the instance of type {instance.shape} (${unit_price}/hr)? (y/n) ")
+                    if response == 'n':
+                        return
+
+                print(Fore.BLUE + f"Starting an instance ...\n", end=" ")
+
+                args = {
+                    'preserve_boot_volume': True,
+                    'preserve_data_volumes_created_at_launch': True,
+                }
+
+                self.compute_client_composite_operations.start_instance_and_wait_for_state(
+                    instance.id,
+                    operation_kwargs=args,
+                    wait_for_states=[oci.core.models.Instance.LIFECYCLE_STATE_STOPPED]
+                )
+
+                # record the running time and cost
+                end_time = datetime.now(timezone.utc)
+                running_time = end_time - instance.time_created
+                instance_unit_cost = self.get_unit_price_instance(instance)
+                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+
+                # store the record into the database
+                instance_type = instance.shape
+                data = [user_name, instance.id, instance_type,
+                        instance.time_created, end_time, running_cost, remaining_balance]
+
+                if os.path.isfile(self.usage_history):
+                    df = pd.read_pickle(self.usage_history)
+                else:
+                    df = pd.DataFrame([], columns=['Name','User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+                if instance.id not in df['InstanceID'].values:
+                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                else:
+                    df.loc[df['InstanceID'] == instance.id, 'End'] = end_time
+                df.to_pickle(self.usage_history)
 
     def check_valid_user(self, user_name, verbose=False):
         if user_name not in self.users:
