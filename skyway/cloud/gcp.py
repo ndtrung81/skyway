@@ -228,11 +228,11 @@ class GCP(Cloud):
 
         output_str = ''
         if verbose == True:
-            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']))
+            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost'], maxcolwidths=None))
             print("")
         else:
             output_str = io.StringIO()
-            print(tabulate(nodes, headers=['Name', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']), file=output_str)
+            print(tabulate(nodes, headers=['Name', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost'], maxcolwidths=None), file=output_str)
             print("", file=output_str)
         return nodes, output_str
     
@@ -644,10 +644,15 @@ class GCP(Cloud):
         user_name = os.environ['USER']
 
         for node in self.driver.list_nodes():
-            if node.state != "running":
-                continue
-            
-            if node.name in node_names or node.id in IDs:
+
+            check_nodename = False
+            check_id = False
+            if node_names is not None:
+                check_nodename = node.name in node_names
+            if IDs is not None:
+                check_id = node.id in IDs
+
+            if check_nodename or check_id:
                 node_user_name = self.get_instance_user_name(node)
                 if  node_user_name != user_name:
                     print(f"Cannot destroy an instance {node.name} created by other users")
@@ -751,12 +756,8 @@ class GCP(Cloud):
     def get_instance_name(self, node):
         """Member function: get_instance_name
         Get the name information from the instance with given ID.
-        Note: AWS doesn't use unique name for instances, instead, name is an
-        attribute stored in the tags.
-        
          - node: a node object
         """
-
         return node.name
 
     def get_instance_ID(self, instance_name: str):

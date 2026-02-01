@@ -129,11 +129,11 @@ class AZURE(Cloud):
 
         output_str = ''
         if verbose == True:
-            print(tabulate(nodes, headers=['Name', 'User','Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']))
+            print(tabulate(nodes, headers=['Name', 'User','Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost'], maxcolwidths=None))
             print("")
         else:
             output_str = io.StringIO()
-            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']), file=output_str)
+            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost'], maxcolwidths=None), file=output_str)
             print("", file=output_str)
         return nodes, output_str            
 
@@ -435,12 +435,17 @@ class AZURE(Cloud):
         parts = resource_id.split('/')
         return parts[4], parts[-1]  # (resource_group, resource_name)
 
-    def destroy_nodes(self, node_names, need_confirmation=True):
+    def destroy_nodes(self, node_names=[], IDs=[], need_confirmation=True):
         '''
         Destroy all the nodes given the list of node names
         NOTE: should store the running cost and time before terminating the node(s)
         node_names = list of node names as strings
         '''
+        if node_names is None:
+            node_names = []
+        if len(node_names) == 0:
+            raise Exception("No node names are provided to destroy.")
+
         if isinstance(node_names, str): node_names = [node_names]
         user_name = os.environ['USER']
 

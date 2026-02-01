@@ -120,11 +120,11 @@ class OCI(Cloud):
         
         output_str = ''
         if verbose == True:
-            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']))
+            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost'], maxcolwidths=None))
             print("")
         else:
             output_str = io.StringIO()
-            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']), file=output_str)
+            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost'], maxcolwidths=None), file=output_str)
             print("", file=output_str)
         return nodes, output_str
 
@@ -385,12 +385,21 @@ class OCI(Cloud):
         ).data
 
         # Filter the instances to get only the running ones
-        running_instances = [instance for instance in instance_list if instance.lifecycle_state == 'RUNNING']
+        avail_instances = [instance for instance in instance_list 
+                             if instance.lifecycle_state == 'RUNNING' or instance.lifecycle_state == 'STOPPED']
 
         # Terminate instances with the given names
         
-        for instance in running_instances:
-            if instance.display_name in node_names or instance.id in IDs:
+        for instance in avail_instances:
+
+            check_nodename = False
+            check_id = False
+            if node_names is not None:
+                check_nodename = instance.display_name in node_names
+            if IDs is not None:
+                check_id = instance.id in IDs
+
+            if check_nodename or check_id:
                 user_name = self.get_instance_user_name(instance)
 
                 if user_name != os.environ['USER']:
