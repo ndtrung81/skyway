@@ -50,7 +50,7 @@ class GCP(Cloud):
 
         self.keyfile = account_path + self.account['key_file'] + '.json'
         if not os.path.isfile(self.keyfile):
-            raise Exception(f"PEM key {self.keyfile} is not found.")
+            raise Exception(f"The key file {self.keyfile} is not found.")
 
         self.usage_history = f"{account_path}usage-{account}.pkl"
 
@@ -72,6 +72,11 @@ class GCP(Cloud):
         except Exception as e:
             print(f"An error occurred: {e}")
         
+        pem_file_full_path = account_path + self.account['key_name'] + '.pem'
+        self.my_ssh_private_key =  f"~/.my_gcp_ssh_key.pem"
+        cmd = f"cp {pem_file_full_path} {self.my_ssh_private_key}; chmod 600 {self.my_ssh_private_key}"
+        p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+
         assert(self.driver != False)
         return
 
@@ -279,6 +284,7 @@ class GCP(Cloud):
         #if location is None:
         #    raise ValueError(f"Location '{location_name}' not found.")
         location_name = self.account['location']
+        vpc_name = self.account.get('vpc_name', 'vpc1')
 
         nodes = {}
         node_cfg = self.vendor['node-types'][node_type]
@@ -293,7 +299,9 @@ class GCP(Cloud):
             'https://www.googleapis.com/auth/service.management.readonly',
             'https://www.googleapis.com/auth/trace.append'
         ]
-        network = 'vpc1'      # get this from ex_list_networks()
+        networks = self.driver.ex_list_networks() #'vpc1'      # get this from ex_list_networks()
+        network = next((net for net in networks if net.name == vpc_name), None)
+
         subnets = self.driver.ex_list_subnetworks()
         subnet = next((sub for sub in subnets if sub.name == location_name), None)
 
@@ -375,11 +383,12 @@ class GCP(Cloud):
                 df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
                 df.to_pickle(self.usage_history)
 
-                cmd = f"ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} -t 'sudo shutdown -P +{walltime_in_minutes}' "
+
+                cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} -t 'sudo shutdown -P +{walltime_in_minutes}' "
                 print("Preparing the instance...")
                 p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
                 print("To connect to the instance, run:")
-                print(f"  ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} or")
+                print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} or")
                 print(f"  skyway_connect --account={self.account_name} -J {node.name}")
             except libcloud.common.google.ResourceNotFoundError as e:
                 print(f'Error: Resource not found. Details: {e}')
