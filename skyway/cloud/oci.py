@@ -912,3 +912,6 @@ class OCI(Cloud):
         # but for Production code you should have a better way of determining what is needed
         availability_domain = list_availability_domains_response.data[0]
         return availability_domain.name
+
+    def get_private_key(self):
+        return self.my_ssh_private_key

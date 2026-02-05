@@ -910,3 +910,6 @@ class AWS(Cloud):
             print(tabulate(nodes, headers=['Name', 'Status', 'Type', 'Instance ID', 'ElapsedTime', 'RunningCost']))
 
         return total_cost
+
+    def get_private_key(self):
+        return self.my_ssh_private_key

@@ -586,10 +586,11 @@ class GCP(Cloud):
                     break
         if node is not None:                
             public_ip = node.public_ips[0]
-        
-        username = self.vendor['username']
+
+        # GCP allows to specify user name when creating the VMs
+        username = self.get_instance_user_name(node)
         node_info = {
-            'private_key' : "",
+            'private_key' : self.get_private_key(),
             'login' : f"{username}@{public_ip}",
         }
         return node_info
@@ -816,3 +817,6 @@ class GCP(Cloud):
             print("")
 
         return total_cost
+
+    def get_private_key(self):
+        return self.my_ssh_private_key

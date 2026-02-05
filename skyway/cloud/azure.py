@@ -897,3 +897,5 @@ class AZURE(Cloud):
 
         return total_cost
 
+    def get_private_key(self):
+        return self.my_ssh_private_key

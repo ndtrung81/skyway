@@ -169,6 +169,11 @@ class Cloud():
         '''
         pass
 
+    def get_private_key(self):
+        '''
+        get the private key used for SSH public key authentication
+        '''
+        return ""
 
     @staticmethod
     def create(vendor: str, kwargs):

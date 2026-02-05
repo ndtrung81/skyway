@@ -71,7 +71,7 @@ class InstanceDescriptor:
                 raise Exception(f'Cannot find a valid instance ID for {self.jobname}. Check the running VMs of this cloud account with the skyway list command.')
 
             node_info = self.account.get_node_connection_info(instanceID)
-            private_key = node_info['private_key']
+            private_key = self.account.get_private_key()
             remote = node_info['login']
             local = ' '.join(local_data)
 
