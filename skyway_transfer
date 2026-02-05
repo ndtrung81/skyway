@@ -99,7 +99,7 @@ class InstanceDescriptor:
 
             node_info = self.account.get_node_connection_info(instanceID)
             if node_info:
-                private_key = node_info['private_key']
+                private_key = self.account.get_private_key()
                 remote = node_info['login']
 
                 if from_cloud == True:
