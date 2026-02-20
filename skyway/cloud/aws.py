@@ -20,6 +20,7 @@ from .. import utils
 
 from colorama import Fore
 import pandas as pd
+import time
 
 # AWS python SDK
 import boto3

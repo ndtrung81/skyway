@@ -15,6 +15,7 @@ import os
 import random
 import subprocess
 from tabulate import tabulate
+import time
 
 from .core import Cloud
 from .. import utils

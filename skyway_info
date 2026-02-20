@@ -94,7 +94,7 @@ if __name__ == "__main__":
         sys.exit()
 
     print(Fore.GREEN + f"Skyway v2.0")
-    print(f"Copyright 2019-2025 Research Computing Center, University of Chicago")
+    print(f"Copyright 2019-2026 Research Computing Center, University of Chicago")
     pwd = os.environ['PWD']
     cmd = f"cd {skywayroot}; git describe --always; cd {pwd}"
     p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
@@ -127,7 +127,7 @@ if __name__ == "__main__":
 
     command = "skyway_transfer"
     description = "Tranfer data from/to a running instance under a cloud account "
-    usage = "skyway_transfer -A rcc-aws -J your-run training.py input.data; or skyway_transfer -A rcc-aws -J your-run --from-cloud --cloud-path=~/output.txt $HOME/output.txt"
+    usage = "skyway_transfer -A rcc-aws -J your-run training.py input.data; or\nskyway_transfer -A rcc-aws -J your-run --from-cloud --cloud-path=~/output.txt $HOME/output.txt"
     data.append([command, description, usage])
 
     command = "skyway_connect"
