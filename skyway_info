@@ -5,6 +5,7 @@ from io import StringIO
 import os
 import subprocess
 from subprocess import PIPE, Popen
+import sys
 
 import skyway
 from skyway.cloud.aws import *
@@ -20,8 +21,8 @@ from colorama import Fore
 #./skyway_list --account=rcc-aws
 
 class InstanceDescriptor:
-    def __init__(self, jobname: str, account_name: str, node_type: str, walltime: str, vendor_name: str):
-        self.jobname = jobname
+    def __init__(self, account_name: str, node_type: str, walltime: str, vendor_name: str):
+
         self.account_name = account_name
         self.node_type = node_type
         self.walltime = walltime
@@ -45,32 +46,52 @@ class InstanceDescriptor:
         # retrieve from database for the given account
         accumulating_cost, remaining_balance = self.account.get_cost_and_usage_from_db(user_name=self.user)
         return remaining_balance
-
-    def getEstimateCost(self):
-        pt = datetime.strptime(self.walltime, "%H:%M:%S")
-        walltime_in_hours = int(pt.hour + pt.minute/60)
-        if "midway3" in self.vendor_name:
-            unit_price = 1.0 # float(self.account.get_unit_price(self.node_type))
-        else:
-            unit_price = float(self.account.get_unit_price(self.node_type))
-        cost = walltime_in_hours * unit_price
-        return cost
   
-    def list_nodes(self):
-        nodes, list_of_nodes = self.account.list_nodes(verbose=False) 
-        return nodes
+    def list_users(self):
+        for user in self.account.users.keys():
+            print(f"+ {user}")
+
 
 if __name__ == "__main__":
 
     colorama.init(autoreset=True)
 
     msg = "Skyway info"
+    
     parser = argparse.ArgumentParser(description=msg)
+    parser.add_argument('-A', '--account', dest='account', default="", help="Account name")
 
-    # get the env variable SKYWAYROOT
-    skywayroot = os.environ['SKYWAYROOT']
-    if skywayroot == "":
-        raise Exception("SKYWAYROOT is not defined.")
+    args = parser.parse_args()
+    account_name = args.account
+    provider = ""
+
+    if len(account_name) != 0:
+        vendor_name = ""
+        if provider == "":
+            # try to infer the vendor name from account
+            if 'aws' in account_name:
+                vendor_name = "aws"
+            elif 'gcp' in account_name:
+                vendor_name = "gcp"
+            elif 'azure' in account_name:
+                vendor_name = "azure"
+            elif 'oci' in account_name:
+                vendor_name = "oci"
+            elif 'midway3' in account_name or 'rcc-staff' in account_name:
+                vendor_name = "rcc-midway3"
+        else:
+            vendor_name = provider
+
+        # get the env variable SKYWAYROOT
+        skywayroot = os.environ['SKYWAYROOT']
+        if skywayroot == "":
+            raise Exception("SKYWAYROOT is not defined.")
+
+        # create an instance descriptor (like with the dashboard)
+        instanceDescriptor = InstanceDescriptor(account_name, "", "", vendor_name)
+        print(f"Current users under the account: {account_name}")
+        instanceDescriptor.list_users()
+        sys.exit()
 
     print(Fore.GREEN + f"Skyway v2.0")
     print(f"Copyright 2019-2025 Research Computing Center, University of Chicago")

@@ -273,12 +273,12 @@ class AWS(Cloud):
             df.to_pickle(self.usage_history)
             
             print("To connect to the instance, run:")
-            cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
-            
-            print(f"  {cmd} or")
+            print(f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com or ")
             print(f"  skyway_connect --account={self.account_name} -J {node_names[inode]}")
+
+            cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
             #cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mkdir -p /software; sudo mount -t nfs {io_server}:/skyway /home; sudo mount -t nfs {io_server}:/software /software' "
-            cmd += f"-t 'sudo shutdown -P +{walltime_in_minutes}' "
+            cmd += f" 'sudo shutdown -P +{walltime_in_minutes}' "
             print("Preparing the instance...")
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
