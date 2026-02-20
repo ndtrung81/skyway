@@ -124,7 +124,7 @@ class AWS(Cloud):
             if instance.state['Name'] != 'terminated':
 
                 # Calculate the running time
-                if node.state == "running":
+                if instance.state['Name'] == "running":
                     running_time = datetime.now(timezone.utc) - instance.launch_time
                 else:
                     df_node = df.loc[df['InstanceID'] == node.id]

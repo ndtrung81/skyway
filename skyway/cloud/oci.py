@@ -96,13 +96,21 @@ class OCI(Cloud):
         instances = self.get_instances()
         nodes = []
 
+        df = pd.read_pickle(self.usage_history)
+
         for instance in instances:
             node_name = self.get_instance_name(instance)
             if show_protected_nodes == False and node_name in self.account['protected_nodes']:
                 continue
 
             if instance.lifecycle_state != 'Terminated':
-                running_time = datetime.now(timezone.utc) - instance.time_created
+
+                if instance.lifecycle_state == "running":
+                    running_time = datetime.now(timezone.utc) - instance.time_created
+                else:
+                    df_node = df.loc[df['InstanceID'] == node.id]
+                    end_time = pd.to_datetime(df_node['End'].iloc[0], '%Y-%m-%dT%H:%M:%S.%f%z')
+                    running_time = end_time - instance.launch_time
 
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.total_seconds()/3600.0 * instance_unit_cost
