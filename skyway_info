@@ -65,6 +65,11 @@ if __name__ == "__main__":
     account_name = args.account
     provider = ""
 
+    # get the env variable SKYWAYROOT
+    skywayroot = os.environ['SKYWAYROOT']
+    if skywayroot == "":
+        raise Exception("SKYWAYROOT is not defined.")
+
     if len(account_name) != 0:
         vendor_name = ""
         if provider == "":
@@ -81,11 +86,6 @@ if __name__ == "__main__":
                 vendor_name = "rcc-midway3"
         else:
             vendor_name = provider
-
-        # get the env variable SKYWAYROOT
-        skywayroot = os.environ['SKYWAYROOT']
-        if skywayroot == "":
-            raise Exception("SKYWAYROOT is not defined.")
 
         # create an instance descriptor (like with the dashboard)
         instanceDescriptor = InstanceDescriptor(account_name, "", "", vendor_name)

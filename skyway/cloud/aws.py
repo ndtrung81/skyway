@@ -280,6 +280,7 @@ class AWS(Cloud):
             #cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mkdir -p /software; sudo mount -t nfs {io_server}:/skyway /home; sudo mount -t nfs {io_server}:/software /software' "
             cmd += f" 'sudo shutdown -P +{walltime_in_minutes}' "
             print("Preparing the instance...")
+            time.sleep(10)
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
             #  mount the storage attached to the io_node (optional)
