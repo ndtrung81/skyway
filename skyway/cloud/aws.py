@@ -127,7 +127,7 @@ class AWS(Cloud):
                 if instance.state['Name'] == "running":
                     running_time = datetime.now(timezone.utc) - instance.launch_time
                 else:
-                    df_node = df.loc[df['InstanceID'] == node.id]
+                    df_node = df.loc[df['InstanceID'] == instance.instance_id]
                     end_time = pd.to_datetime(df_node['End'].iloc[0], '%Y-%m-%dT%H:%M:%S.%f%z')
                     running_time = end_time - instance.launch_time
                 
