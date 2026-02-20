@@ -113,6 +113,8 @@ class AWS(Cloud):
         
         instances = self.get_instances()
         nodes = []
+
+        df = pd.read_pickle(self.usage_history)
        
         for instance in instances:
             node_name = self.get_instance_name(instance)
@@ -120,7 +122,14 @@ class AWS(Cloud):
                 continue
 
             if instance.state['Name'] != 'terminated':
-                running_time = datetime.now(timezone.utc) - instance.launch_time
+
+                # Calculate the running time
+                if node.state == "running":
+                    running_time = datetime.now(timezone.utc) - instance.launch_time
+                else:
+                    df_node = df.loc[df['InstanceID'] == node.id]
+                    end_time = pd.to_datetime(df_node['End'].iloc[0], '%Y-%m-%dT%H:%M:%S.%f%z')
+                    running_time = end_time - instance.launch_time
                 
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.total_seconds()/3600.0 * instance_unit_cost

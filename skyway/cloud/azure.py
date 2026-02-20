@@ -13,6 +13,7 @@ import os
 import random
 import subprocess
 from tabulate import tabulate
+import time
 
 from .core import Cloud
 from .. import utils
@@ -334,6 +335,7 @@ class AZURE(Cloud):
                 )
                 ip = public_ip_address.ip_address
                 cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{ip} -t 'sudo shutdown -P +{walltime_in_minutes}' "
+                time.sleep(30)
                 subprocess.run(cmd, shell=True, text=True, capture_output=True)
             
 

@@ -211,6 +211,9 @@ class GCP(Cloud):
         """
         nodes = []
         current_time = datetime.now(timezone.utc)
+
+        df = pd.read_pickle(self.usage_history)
+
         for node in self.driver.list_nodes():
             if node.state == 'terminated':
                 continue
@@ -222,7 +225,12 @@ class GCP(Cloud):
                 creation_time = datetime.strptime(creation_time_str, '%Y-%m-%dT%H:%M:%S.%f%z')
                 
                 # Calculate the running time
-                running_time = current_time - creation_time
+                if node.state == "running":
+                     running_time = current_time - creation_time
+                else:
+                    df_node = df.loc[df['InstanceID'] == node.id]
+                    end_time = pd.to_datetime(df_node['End'].iloc[0], '%Y-%m-%dT%H:%M:%S.%f%z')
+                    running_time = end_time - creation_time
 
                 # Calculate the running cost
                 instance_unit_cost = self.get_unit_price_instance(node)

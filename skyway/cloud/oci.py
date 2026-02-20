@@ -14,6 +14,7 @@ import os
 import random
 import subprocess
 from tabulate import tabulate
+import time
 
 from .core import Cloud
 from .. import utils
@@ -271,6 +272,7 @@ class OCI(Cloud):
         cmd += f" -t 'sudo shutdown -P +{walltime_in_minutes}' "
         #cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mount -t nfs {io_server}:/software /software' "
         print("Preparing the instance...")
+        time.sleep(30)
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
         return nodes
