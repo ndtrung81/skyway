@@ -128,8 +128,11 @@ class AWS(Cloud):
                     running_time = datetime.now(timezone.utc) - instance.launch_time
                 else:
                     df_node = df.loc[df['InstanceID'] == instance.instance_id]
-                    end_time = pd.to_datetime(df_node['End'].iloc[0], '%Y-%m-%dT%H:%M:%S.%f%z')
-                    running_time = end_time - instance.launch_time
+                    if df_node.empty == False:
+                        end_time = pd.to_datetime(df_node['End'].iloc[0], '%Y-%m-%dT%H:%M:%S.%f%z')
+                        running_time = end_time - instance.launch_time
+                    else:
+                        continue
                 
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.total_seconds()/3600.0 * instance_unit_cost

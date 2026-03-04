@@ -226,11 +226,14 @@ class GCP(Cloud):
                 
                 # Calculate the running time
                 if node.state == "running":
-                     running_time = current_time - creation_time
+                    running_time = current_time - creation_time
                 else:
                     df_node = df.loc[df['InstanceID'] == node.id]
-                    end_time = pd.to_datetime(df_node['End'].iloc[0], '%Y-%m-%dT%H:%M:%S.%f%z')
-                    running_time = end_time - creation_time
+                    if df_node.empty == False:
+                        end_time = pd.to_datetime(df_node['End'].iloc[0], '%Y-%m-%dT%H:%M:%S.%f%z')
+                        running_time = end_time - creation_time
+                    else:
+                        continue
 
                 # Calculate the running cost
                 instance_unit_cost = self.get_unit_price_instance(node)
