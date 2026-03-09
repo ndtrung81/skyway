@@ -64,6 +64,7 @@ class GCP(Cloud):
         self.vendor = vendor_cfg['gcp']
         self.account_name = account
         self.onpremises = False
+        self.post_boot_script = self.account.get('post_boot_script', "")
 
         ComputeEngine = get_driver(Provider.GCE)
         try:
@@ -396,6 +397,12 @@ class GCP(Cloud):
                 cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} 'sudo shutdown -P +{walltime_in_minutes}' "
                 p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
+                # execute the post boot script on the VM
+                if self.post_boot_script != "":
+                    script_cmd = utils.script2cmd(self.post_boot_script)
+                    cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} '{script_cmd}' "
+                    p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+
                 print("To connect to the instance, run:")
                 print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} or")
                 print(f"  skyway_connect --account={self.account_name} -J {node.name}")
@@ -645,7 +652,7 @@ class GCP(Cloud):
             user_name = os.environ['USER']
             script_cmd = utils.script2cmd(script_name)
             
-            cmd = f"ssh -o StrictHostKeyChecking=accept-new {user_name}@{host} -t '{script_cmd}' "
+            cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} '{script_cmd}' "
             os.system(cmd)
         else:
             print(f"Node {node_id} does not exist.") 
