@@ -291,11 +291,6 @@ class GCP(Cloud):
 
         print(Fore.BLUE + f"Allocating {count} instance ...", end=" ")
 
-        #location_name = self.vendor['location'] + '-c'
-        #locations = self.driver.list_locations()
-        #location = next((loc for loc in locations if loc.name == location_name), None)
-        #if location is None:
-        #    raise ValueError(f"Location '{location_name}' not found.")
         location_name = self.account['location']
         vpc_name = self.account.get('vpc_name', 'vpc1')
 
@@ -370,7 +365,6 @@ class GCP(Cloud):
                 user_name = os.environ['USER']
                 #print("Connecting to host: " + host)
 
-                # TODO: need to update database
                 # record the running time and cost at launch time and expected walltime
                 # then if destroy_nodes() is invoked then updated the end time and cost
 
@@ -398,6 +392,7 @@ class GCP(Cloud):
                 p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
                 # execute the post boot script on the VM
+                # need to install gcsfuse or nfs-utils on the VM (or having an image that has gcsfuse installed) to mount available storage
                 if self.post_boot_script != "":
                     script_cmd = utils.script2cmd(self.post_boot_script)
                     cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} '{script_cmd}' "

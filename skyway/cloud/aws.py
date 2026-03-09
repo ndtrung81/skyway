@@ -65,6 +65,7 @@ class AWS(Cloud):
         self.vendor = vendor_cfg['aws']
         self.account_name = account
         self.onpremises = False
+        self.post_boot_script = self.account.get('post_boot_script', "")
 
         # using_trusted_agent = False means that no use of master account key and secret as defined in cloud.yaml
         self.using_trusted_agent = self.account.get('using_trusted_agent', False)
@@ -261,9 +262,6 @@ class AWS(Cloud):
 
             print(f"\nCreated instance: {node_names[inode]}")
 
-            # need to install nfs-utils on the VM (or having an image that has nfs-utils installed)
-            #cmd = f"ssh -i {pem_file_full_path} {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com -t 'sudo mount -t nfs 172.31.47.245:/skyway /home' "
-
             # record the running time and cost at launch time and expected walltime
             # then if destroy_nodes() is invoked then updated the end time and cost
             
@@ -290,15 +288,24 @@ class AWS(Cloud):
             print(f"  skyway_connect --account={self.account_name} -J {node_names[inode]}")
 
             cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
-            #cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mkdir -p /software; sudo mount -t nfs {io_server}:/skyway /home; sudo mount -t nfs {io_server}:/software /software' "
+
             cmd += f" 'sudo shutdown -P +{walltime_in_minutes}' "
             print("Preparing the instance...")
             time.sleep(10)
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
+            # execute the post boot script on the VM
+            # need to install nfs-utils on the VM (or having an image that has nfs-utils installed) to mount available storage
+            #    cmd = f"ssh -i {pem_file_full_path} {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com -t 'sudo mount -t nfs 172.31.47.245:/skyway /home' "
+            #    cmd += f"-t ' sudo mkdir -p /software; sudo mount -t nfs {io_server}:/skyway /home; sudo mount -t nfs {io_server}:/software /software' "
+            if self.post_boot_script != "":
+                script_cmd = utils.script2cmd(self.post_boot_script)
+                cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new @ec2-{ip_converted}.{region}.compute.amazonaws.com '{script_cmd}' "
+                p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+
             #  mount the storage attached to the io_node (optional)
-            cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
-            cmd += f"-t 'sudo mkdir -p /cloud/rcc-aws; sudo mount -t nfs {io_server}:/cloud/rcc-aws /cloud/rcc-aws' "
+            cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
+            cmd += f" 'sudo mkdir -p /cloud/rcc-aws; sudo mount -t nfs {io_server}:/cloud/rcc-aws /cloud/rcc-aws' "
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
         return nodes
 

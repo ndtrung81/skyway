@@ -78,6 +78,7 @@ class OCI(Cloud):
         self.vendor = vendor_cfg['oci']
         self.account_name = account
         self.onpremises = False
+        self.post_boot_script = self.account.get('post_boot_script', "")
 
         # copy ssh pem file to ~/, change the permission to 400
         pem_file_full_path = account_path + self.account['private_key']
@@ -241,14 +242,6 @@ class OCI(Cloud):
         launch_time = instance.time_created.strftime("%Y-%m-%dT%H:%M:%S.%f%z")
         nodes[node_names[0]] = [instance_type, launch_time, str(public_ip)]
 
-        # perform post boot tasks on each node
-        #   + mounting storage (/home, /software) from io-server 172.31.47.245 (private IP of the rcc-io node) (rcc-aws, not using a trusted agent)
-        #   + executing some custom scripts
-        #   + shut down the instance after the walltime
-        #io_server = "172.31.47.245"
-        
-        #ip_converted = ip.replace('.','-')
-
         print(f"\nCreated instance: {instance.display_name}")
 
         # record the running time and cost at launch time and expected walltime
@@ -272,16 +265,22 @@ class OCI(Cloud):
         df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
         df.to_pickle(self.usage_history)
         
-        # need to install nfs-utils on the VM (or having an image that has nfs-utils installed)
         print(f"To connect to the instance, run:")
         cmd = f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip} or"
         print(f"  skyway_connect --account={self.account_name} -J {instance.display_name}")
         print(f"{cmd}")
         cmd += f" -t 'sudo shutdown -P +{walltime_in_minutes}' "
-        #cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mount -t nfs {io_server}:/software /software' "
+
         print("Preparing the instance...")
         time.sleep(30)
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+
+        # execute the post boot script on the VM
+        #   need to install nfs-utils on the VM (or having an image that has nfs-utils installed)
+        if self.post_boot_script != "":
+            script_cmd = utils.script2cmd(self.post_boot_script)
+            cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{public_ip} '{script_cmd}' "
+            p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
         return nodes
 

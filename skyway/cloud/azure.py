@@ -81,6 +81,7 @@ class AZURE(Cloud):
         self.vendor = vendor_cfg['azure']
         self.account_name = account
         self.onpremises = False
+        self.post_boot_script = self.account.get('post_boot_script', "")
 
         self.credentials = ClientSecretCredential(client_id=self.account['client_id'],
                                                   client_secret=self.account['client_secret'],
@@ -334,10 +335,16 @@ class AZURE(Cloud):
                     resource_group_name, public_ip_name
                 )
                 ip = public_ip_address.ip_address
-                cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{ip} -t 'sudo shutdown -P +{walltime_in_minutes}' "
+                cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{ip} 'sudo shutdown -P +{walltime_in_minutes}' "
                 time.sleep(30)
                 subprocess.run(cmd, shell=True, text=True, capture_output=True)
-            
+
+                # execute the post boot script on the VM
+                # need to install gcsfuse or nfs-utils on the VM (or having an image that has gcsfuse installed) to mount available storage
+                if self.post_boot_script != "":
+                    script_cmd = utils.script2cmd(self.post_boot_script)
+                    cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{ip} '{script_cmd}' "
+                    p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
         return nodes
 
