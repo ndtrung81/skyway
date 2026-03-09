@@ -342,8 +342,8 @@ class AZURE(Cloud):
                 # execute the post boot script on the VM
                 # need to install gcsfuse or nfs-utils on the VM (or having an image that has gcsfuse installed) to mount available storage
                 if self.post_boot_script != "":
-                    script_cmd = utils.script2cmd(self.post_boot_script)
-                    cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{ip} '{script_cmd}' "
+                    script_file = os.environ['SKYWAYROOT'] + "/" + utils.script2cmd(self.post_boot_script)
+                    cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{ip} '{script_file}' "
                     p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
         return nodes
