@@ -593,6 +593,13 @@ class OCI(Cloud):
                     wait_for_states=[oci.core.models.Instance.LIFECYCLE_STATE_STOPPED]
                 )
 
+                time.sleep(30)
+                public_ip_address = self.get_host_ip(instance.id)
+                print(f'\nInstance {instance.name} is up.')
+                print("To connect to the instance, run:")
+                print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{public_ip_address} or")
+                print(f"  skyway_connect --account={self.account_name} -J {instance.display_name}")
+
                 # record the running time and cost
                 end_time = datetime.now(timezone.utc)
                 running_time = end_time - instance.time_created

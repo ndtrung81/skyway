@@ -570,7 +570,11 @@ class GCP(Cloud):
                 #print(f"Creation timestamp: {creation_time_str}")
                 creation_time = datetime.strptime(creation_time_str, '%Y-%m-%dT%H:%M:%S.%f%z')
 
+                time.sleep(30)
                 print(f'\nInstance {node.name} is up.')
+                print("To connect to the instance, run:")
+                print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{node.public_ips[0]} or")
+                print(f"  skyway_connect --account={self.account_name} -J {node.name}")
 
                 running_time = timedelta(hours=pt.hour, minutes=pt.minute, seconds=pt.second)
                 instance_unit_cost = self.get_unit_price_instance(node)
