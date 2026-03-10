@@ -110,7 +110,7 @@ class OCI(Cloud):
                     running_time = datetime.now(timezone.utc) - instance.time_created
                 else:
                     df_node = df.loc[df['InstanceID'] == node.id]
-                    end_time = pd.to_datetime(df_node['End'].iloc[0], '%Y-%m-%dT%H:%M:%S.%f%z')
+                    end_time = pd.to_datetime(df_node['End'].iloc[0], format='%Y-%m-%dT%H:%M:%S.%f%z')
                     running_time = end_time - instance.launch_time
 
                 instance_unit_cost = self.get_unit_price_instance(instance)

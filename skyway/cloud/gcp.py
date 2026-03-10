@@ -231,7 +231,7 @@ class GCP(Cloud):
                 else:
                     df_node = df.loc[df['InstanceID'] == node.id]
                     if df_node.empty == False:
-                        end_time = pd.to_datetime(df_node['End'].iloc[0], '%Y-%m-%dT%H:%M:%S.%f%z')
+                        end_time = pd.to_datetime(df_node['End'].iloc[0], format='%Y-%m-%dT%H:%M:%S.%f%z')
                         running_time = end_time - creation_time
                     else:
                         continue
