@@ -299,7 +299,7 @@ class AWS(Cloud):
             #    cmd = f"ssh -i {pem_file_full_path} {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com -t 'sudo mount -t nfs 172.31.47.245:/skyway /home' "
             #    cmd += f"-t ' sudo mkdir -p /software; sudo mount -t nfs {io_server}:/skyway /home; sudo mount -t nfs {io_server}:/software /software' "
             if self.post_boot_script != "":
-                script_file = os.environ['SKYWAYROOT'] + "/" + self.post_boot_script
+                script_file = os.environ['SKYWAYROOT'] + "/etc/accounts/" + self.post_boot_script
                 script_cmd = utils.script2cmd(script_file)
                 cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new @ec2-{ip_converted}.{region}.compute.amazonaws.com '{script_cmd}' "
                 p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
