@@ -66,6 +66,12 @@ class Cloud():
         remaining_balance = 0
         return accumulating_cost, remaining_balance
 
+    def get_usage_history_from_db(self, user_name):
+        '''
+        return the list of jobs/instances
+        '''
+        pass
+
     # instance operations
 
     def list_nodes(self, show_protected_nodes=False, verbose=False):
@@ -74,7 +80,7 @@ class Cloud():
         '''
         pass
 
-    def create_nodes(self, node_type: str, node_names = [], need_confirmation = True, walltime = None):
+    def create_nodes(self, node_type: str, node_names = [], need_confirmation = True, walltime = None, image_id = ""):
         '''
         create several nodes (aka instances) given a list of node names
         '''
@@ -86,9 +92,21 @@ class Cloud():
         '''
         pass
 
-    def destroy_nodes(self, node_names, need_confirmation=True):
+    def destroy_nodes(self, node_names, ids, need_confirmation=True):
         '''
         destroy several nodes (aka instances) given a list of node names
+        '''
+        pass
+
+    def stop_nodes(self, node_names, ids, need_confirmation=True):
+        '''
+        stop several nodes (aka instances) given a list of node names
+        '''
+        pass
+
+    def restart_nodes(self, node_names, need_confirmation=True):
+        '''
+        restart several nodes (aka instances) given a list of node names
         '''
         pass
 
@@ -151,6 +169,11 @@ class Cloud():
         '''
         pass
 
+    def get_private_key(self):
+        '''
+        get the private key used for SSH public key authentication
+        '''
+        return ""
 
     @staticmethod
     def create(vendor: str, kwargs):

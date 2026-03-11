@@ -7,10 +7,11 @@
 Documentation for AWS Class
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import io
 import logging
 import os
+import random
 import subprocess
 from tabulate import tabulate
 
@@ -19,6 +20,7 @@ from .. import utils
 
 from colorama import Fore
 import pandas as pd
+import time
 
 # AWS python SDK
 import boto3
@@ -63,9 +65,10 @@ class AWS(Cloud):
         self.vendor = vendor_cfg['aws']
         self.account_name = account
         self.onpremises = False
+        self.post_boot_script = self.account.get('post_boot_script', "")
 
         # using_trusted_agent = False means that no use of master account key and secret as defined in cloud.yaml
-        self.using_trusted_agent = False
+        self.using_trusted_agent = self.account.get('using_trusted_agent', False)
         if self.using_trusted_agent == False:
             # This is how the existing skyway creates the ec2 resource without master for rcc-aws
             self.ec2 = boto3.resource('ec2',
@@ -73,7 +76,8 @@ class AWS(Cloud):
                                        aws_secret_access_key = self.account['secret_access_key'],
                                        region_name = self.account['region'])
         else:
-            # This is how the testing skyway (midway3 VM) for rcc-aws: uses the IAM rcc-skyway as a trusted agent from the RCC-Skyway account (391009850283)
+            # This is how the testing skyway (midway3 VM) for rcc-aws (account id 391009850283, PI Test): uses the IAM rcc-skyway as a trusted agent from the RCC-Skyway account (345587500613)
+            # the ITS created a cloud account for the PI in the RCC Organizational Unit (OU) which specifies the IAM role rcc-skyway to manage this PI account.
             self.client = boto3.client('sts',
                 aws_access_key_id = self.vendor['master_access_key_id'],
                 aws_secret_access_key = self.vendor['master_secret_access_key'])
@@ -93,10 +97,10 @@ class AWS(Cloud):
             EC2 = get_driver(Provider.EC2)
             self.driver = EC2(self.account['access_key_id'], self.account['secret_access_key'], self.account['region'])
         
-        # copy ssh pem file to ~/, change the permission to 400
+        # copy ssh pem file to ~/, change the permission to 600
         pem_file_full_path = account_path + self.account['key_name'] + '.pem'
         self.my_ssh_private_key =  f"~/.my_aws_ssh_key.pem"
-        cmd = f"cp {pem_file_full_path} {self.my_ssh_private_key}; chmod 400 {self.my_ssh_private_key}"
+        cmd = f"cp {pem_file_full_path} {self.my_ssh_private_key}; chmod 600 {self.my_ssh_private_key}"
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
        
@@ -110,14 +114,26 @@ class AWS(Cloud):
         
         instances = self.get_instances()
         nodes = []
-        
+
+        df = pd.read_pickle(self.usage_history)
+       
         for instance in instances:
             node_name = self.get_instance_name(instance)
             if show_protected_nodes == False and node_name in self.account['protected_nodes']:
                 continue
 
             if instance.state['Name'] != 'terminated':
-                running_time = datetime.now(timezone.utc) - instance.launch_time
+
+                # Calculate the running time
+                if instance.state['Name'] == "running":
+                    running_time = datetime.now(timezone.utc) - instance.launch_time
+                else:
+                    df_node = df.loc[df['InstanceID'] == instance.instance_id]
+                    if df_node.empty == False:
+                        end_time = pd.to_datetime(df_node['End'].iloc[0], format='%Y-%m-%dT%H:%M:%S.%f%z')
+                        running_time = end_time - instance.launch_time
+                    else:
+                        continue
                 
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.total_seconds()/3600.0 * instance_unit_cost
@@ -134,7 +150,7 @@ class AWS(Cloud):
         
         output_str = ''
         if verbose == True:
-            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost']))
+            print(tabulate(nodes, headers=['Name', 'User', 'Status', 'Type', 'Instance ID', 'Host', 'Elapsed Time', 'Running Cost'], maxcolwidths=None))
             print("")
         else:
             output_str = io.StringIO()
@@ -142,7 +158,7 @@ class AWS(Cloud):
             print("", file=output_str)
         return nodes, output_str
 
-    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None):
+    def create_nodes(self, node_type: str, node_names = [], interactive = False, need_confirmation = True, walltime = None, image_id = ""):
         """Member function: create_compute
         Create a group of compute instances(nodes, servers, virtual-machines 
         ...) with the given type.
@@ -152,6 +168,9 @@ class AWS(Cloud):
         
         Return: a dictionary of instance ID (i.e., names) for created instances.
         """
+        if node_type not in self.vendor['node-types']:
+            raise Exception(f'Node type {node_type} is not available in this account.')
+
         user_name = os.environ['USER']
         user_budget = self.get_budget(user_name=user_name, verbose=False)
         usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
@@ -159,10 +178,14 @@ class AWS(Cloud):
         usage = usage + running_cost
         remaining_balance = user_budget - usage
         unit_price = self.vendor['node-types'][node_type]['price']
+
         if need_confirmation == True:
             print(f"User budget: ${user_budget:.3f}")
             print(f"+ Usage    : ${usage:.3f}")
             print(f"+ Available: ${remaining_balance:.3f}")
+            if remaining_balance <= 0:
+                print("The current budget is not sufficient for this request.")
+                return
             response = input(f"Do you want to create an instance of type {node_type} (${unit_price}/hr)? (y/n) ")
             if response == 'n':
                 return
@@ -170,12 +193,16 @@ class AWS(Cloud):
         count = len(node_names)      
         node_name = node_names[0]
 
-        print(Fore.BLUE + f"Allocating {count} instance ...", end=" ")
+        print(Fore.BLUE + f"Allocating {count} instance ...", end="\n")
         
         # ImageID and KeyName provided by the account then user can connect to the running node
         #   if ImageID is from the vendor, KeyName from the account, ssh connections is denied
+        vm_image = self.account['ami_id']
+        if image_id != "":
+            vm_image = image_id
+
         instances = self.ec2.create_instances(
-            ImageId          = self.account['ami_id'],    # self.vendor['ami_id']
+            ImageId          = vm_image,                  # self.vendor['ami_id']
             KeyName          = self.account['key_name'],  # self.vendor['key_name']
             SecurityGroupIds = self.account['security_group'],
             InstanceType     = self.vendor['node-types'][node_type]['name'],
@@ -208,8 +235,8 @@ class AWS(Cloud):
         username = self.vendor['username']
         region = self.account['region']
 
-        if walltime is None:
-            walltime_str = "00:05:00"
+        if walltime is None or walltime == "":
+            walltime_str = "00:30:00"
         else:
             walltime_str = walltime
 
@@ -235,19 +262,52 @@ class AWS(Cloud):
 
             print(f"\nCreated instance: {node_names[inode]}")
 
-            # need to install nfs-utils on the VM (or having an image that has nfs-utils installed)
-            #cmd = f"ssh -i {pem_file_full_path} {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com -t 'sudo mount -t nfs 172.31.47.245:/skyway /home' "
-
-            print("To connect to the instance, run:")
-            cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
+            # record the running time and cost at launch time and expected walltime
+            # then if destroy_nodes() is invoked then updated the end time and cost
             
-            print(f"  {cmd} or")
+            running_time = timedelta(hours=pt.hour, minutes=pt.minute, seconds=pt.second)
+            instance_unit_cost = self.get_unit_price_instance(instance)
+            projected_running_cost = running_time.seconds/3600.0 * instance_unit_cost
+            usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+            end_time = instance.launch_time + running_time
+
+            # store the record into the database
+            data = [user_name, instance.instance_id, instance.instance_type,
+                    instance.launch_time, end_time, projected_running_cost, remaining_balance]
+
+            if os.path.isfile(self.usage_history):
+                df = pd.read_pickle(self.usage_history)
+            else:
+                df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+            df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+            df.to_pickle(self.usage_history)
+            
+            print("To connect to the instance, run:")
+            print(f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com or ")
             print(f"  skyway_connect --account={self.account_name} -J {node_names[inode]}")
-            #cmd = f"ssh -i {pem_file_full_path} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
-            #cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mkdir -p /software; sudo mount -t nfs {io_server}:/skyway /home; sudo mount -t nfs {io_server}:/software /software' "
-            cmd += f"-t 'sudo shutdown -P {walltime_in_minutes}; sudo mkdir -p /cloud/rcc-aws; sudo mount -t nfs {io_server}:/cloud/rcc-aws /cloud/rcc-aws' "
+
+            cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
+
+            cmd += f" 'sudo shutdown -P +{walltime_in_minutes}' "
+            print("Preparing the instance...")
+            time.sleep(10)
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
+            # execute the post boot script on the VM
+            # need to install nfs-utils on the VM (or having an image that has nfs-utils installed) to mount available storage
+            #    cmd = f"ssh -i {pem_file_full_path} {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com -t 'sudo mount -t nfs 172.31.47.245:/skyway /home' "
+            #    cmd += f"-t ' sudo mkdir -p /software; sudo mount -t nfs {io_server}:/skyway /home; sudo mount -t nfs {io_server}:/software /software' "
+            if self.post_boot_script != "":
+                script_file = os.environ['SKYWAYROOT'] + "/etc/accounts/" + self.post_boot_script
+                script_cmd = utils.script2cmd(script_file)
+                cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new @ec2-{ip_converted}.{region}.compute.amazonaws.com '{script_cmd}' "
+                p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+
+            #  mount the storage attached to the io_node (optional)
+            cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
+            cmd += f" 'sudo mkdir -p /cloud/rcc-aws; sudo mount -t nfs {io_server}:/cloud/rcc-aws /cloud/rcc-aws' "
+            p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
         return nodes
 
     def connect_node(self, instance_ID, separate_terminal=True):
@@ -264,12 +324,19 @@ class AWS(Cloud):
         region = self.account['region']
         ip_converted = ip.replace('.','-')
 
+        # set up SSH tunneling to the localhost
+        port=random.randint(15000, 30000)
+        cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new -f -N -L {port}:localhost:{port} {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com"
+        print(f"SSH tunneling to the VM using port = {port}")
+        os.system(cmd)
+
         if separate_terminal == True:
             cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
-            cmd += f" 'ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com' "
+            cmd += f" 'module purge; ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com; exec bash' "
         else:
             cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com"
-        os.system(cmd)
+        #os.system(cmd)
+        subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
         node_info = {
             'private_key' : self.my_ssh_private_key,
@@ -342,105 +409,200 @@ class AWS(Cloud):
         """
         
         user_name = os.environ['USER']
-        
         if node_names is None and IDs is None:
             raise ValueError(f"node_names and IDs cannot be both empty.")
 
-        instances = []
-        if node_names is not None:
-            if isinstance(node_names, str): node_names = [node_names]
-            for name in node_names:
-                if name in self.account['protected_nodes']:
-                    continue
-                
-                avail_instances = self.get_instances(filters = [{
-                    "Name" : "instance-state-name",
-                    "Values" : ["running", "stopped"]
-                }])
-                
-                instance = next((inst for inst in avail_instances if self.get_instance_name(inst) == name), None)
-                if instance is None:
-                    raise ValueError(f"Instance '{name}' not found.")
+        # get all the available instances running or stopped
+        avail_instances = self.get_instances(filters = [{
+            "Name" : "instance-state-name",
+            "Values" : ["running", "stopped"]
+        }])
 
+        instances = []
+        for instance in avail_instances:
+            instance_name = self.get_instance_name(instance)
+            instance_id = instance.instance_id
+            if instance_name in self.account['protected_nodes']:
+                continue
+
+            check_nodename = False
+            check_id = False
+            if node_names is not None:
+                check_nodename = instance_name in node_names
+            if IDs is not None:
+                check_id = instance_id in IDs
+
+            if check_nodename or check_id:
                 running_time = datetime.now(timezone.utc) - instance.launch_time
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.seconds/3600.0 * instance_unit_cost
                 instance_user_name = self.get_instance_user_name(instance)
                 if instance_user_name != user_name:
-                    print(f"Cannot destroy an instance {name} created by other users")
+                    print(f"Cannot destroy an instance {instance_name} created by other users")
                     continue
 
                 if need_confirmation == True: 
-                    response = input(f"Do you want to terminate the node {name} {instance.instance_id} (running cost ${running_cost:0.5f})? (y/n) ")
+                    response = input(f"Do you want to terminate the node {instance_name} {instance_id} (running cost ${running_cost:0.5f})? NOTE: Data on the node will be removed. (y/n) ")
                     if response != 'y':
                         continue
 
                 instance.terminate()
    
                 # record the running time and cost
-                running_time = datetime.now(timezone.utc) - instance.launch_time
+                end_time = datetime.now(timezone.utc)
+                running_time = end_time - instance.launch_time
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.seconds/3600.0 * instance_unit_cost
                 usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
 
                 # store the record into the database
                 data = [instance_user_name, instance.instance_id, instance.instance_type,
-                        instance.launch_time, datetime.now(timezone.utc), running_cost, remaining_balance]
+                        instance.launch_time, end_time, running_cost, remaining_balance]
+
                 if os.path.isfile(self.usage_history):
                     df = pd.read_pickle(self.usage_history)
                 else:
                     df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
 
-                df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                if instance.instance_id not in df['InstanceID'].values:
+                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                else:
+                    df.loc[df['InstanceID'] == instance.instance_id, 'End'] = end_time
                 df.to_pickle(self.usage_history)
 
                 instances.append(instance)
+
+    def stop_nodes(self, IDs=[], node_names=[], need_confirmation=True):
+        '''
+        stop all the nodes (instances) given the list of node names
+        NOTE: should store the running cost and time before stopping the node(s)
+        node_names = list of node names as strings
+        '''
+        if isinstance(node_names, str): node_names = [node_names]
+        if isinstance(IDs, str): IDs = [IDs]
+
+        user_name = os.environ['USER']
+        
+        if node_names is None and IDs is None:
+            raise ValueError(f"node_names and IDs cannot be both empty.")
+
+        avail_instances = self.get_instances(filters = [{
+                    "Name" : "instance-state-name",
+                    "Values" : ["running"]
+                }])
+
+        instances = []
+        for instance in avail_instances:
+            instance_name = self.get_instance_name(instance)
+            instance_id = instance.instance_id
+            if instance_name in self.account['protected_nodes']:
+                continue
+
+            if instance_name in node_names or instance_id in IDs:
+
+                running_time = datetime.now(timezone.utc) - instance.launch_time
+                instance_unit_cost = self.get_unit_price_instance(instance)
+                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                instance_user_name = self.get_instance_user_name(instance)
+                if instance_user_name != user_name:
+                    print(f"Cannot stop an instance {instance_name} created by other users")
+                    continue
+
+                instance.stop()
+   
+                # record the running time and cost
+                end_time = datetime.now(timezone.utc)
+                running_time = end_time - instance.launch_time
+                instance_unit_cost = self.get_unit_price_instance(instance)
+                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+
+                # store the record into the database
+                data = [instance_user_name, instance.instance_id, instance.instance_type,
+                        instance.launch_time, end_time, running_cost, remaining_balance]
+
+                if os.path.isfile(self.usage_history):
+                    df = pd.read_pickle(self.usage_history)
+                else:
+                    df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+
+                if instance.instance_id not in df['InstanceID'].values:
+                    df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+                else:
+                    df.loc[df['InstanceID'] == instance.instance_id, 'End'] = end_time
+                df.to_pickle(self.usage_history)
+
+                instances.append(instance)
+
+    def restart_nodes(self, IDs=[], node_names=[], need_confirmation=True, walltime = None):
+        '''
+        restart all the nodes (instances) given the list of node names
+        node_names = list of node names as strings
+        '''
+        if isinstance(node_names, str): node_names = [node_names]
+        if isinstance(IDs, str): IDs = [IDs]
+
+        user_name = os.environ['USER']
+        if walltime is None or walltime == "":
+            walltime_str = "00:30:00"
         else:
-            for ID in IDs:
-                instance = self.ec2.Instance(ID)
-                if self.get_instance_name(instance) in self.account['protected_nodes']:
+            walltime_str = walltime
+
+        # shutdown the instance after the walltime (in minutes)
+        pt = datetime.strptime(walltime_str, "%H:%M:%S")
+        walltime_in_minutes = int(pt.hour * 60 + pt.minute + pt.second/60)
+        
+        if node_names is None and IDs is None:
+            raise ValueError(f"node_names and IDs cannot be both empty.")
+
+        # get all the available instances that are stopped
+        avail_instances = self.get_instances(filters = [{
+                "Name" : "instance-state-name",
+                "Values" : ["stopped"]
+            }])
+
+        for instance in avail_instances:
+            instance_name = self.get_instance_name(instance)
+            instance_id = instance.instance_id
+
+            if instance_id in IDs or instance_name in node_names:
+                if instance_name in self.account['protected_nodes']:
                     continue
 
                 instance_user_name = self.get_instance_user_name(instance)
                 if instance_user_name != user_name:
-                    print(f"Cannot destroy an instance {name} from other users")
+                    print(f"Cannot restart an instance {instance_name} from other users")
                     continue
 
-                if instance is None:
-                    raise ValueError(f"Instance '{instance.name}' not found.")
-
-                running_time = datetime.now(timezone.utc) - instance.launch_time
-                instance_unit_cost = self.get_unit_price_instance(instance)
-                running_cost = running_time.seconds/3600.0 * instance_unit_cost
-
-                response = input(f"Do you want to terminate the node {instance.instance_id} (running cost ${running_cost:0.5f})? (y/n) ")
-                if response != 'y':
-                    continue
-
-                # record the running time and cost
-                running_time = datetime.now(timezone.utc) - instance.launch_time
-                instance_unit_cost = self.get_unit_price_instance(instance)
-                running_cost = running_time.seconds/3600.0 * instance_unit_cost
+                user_budget = self.get_budget(user_name=user_name, verbose=False)
                 usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
+                running_cost = self.get_running_cost(verbose=False)
+                usage = usage + running_cost
+                remaining_balance = user_budget - usage
+                node_type = instance.instance_type
+                unit_price = self.get_unit_price_instance(instance)
+                if need_confirmation == True:
+                    print(f"User budget: ${user_budget:.3f}")
+                    print(f"+ Usage    : ${usage:.3f}")
+                    print(f"+ Available: ${remaining_balance:.3f}")
+                    if remaining_balance <= 0:
+                        print("The current budget is not sufficient for this request.")
+                        return
+                    response = input(f"Do you want to restart the instance of type {node_type} (${unit_price}/hr)? (y/n) ")
+                    if response == 'n':
+                        return
 
-                # store the record into the database
-                data = [instance_user_name, instance.instance_id, instance.instance_type,
-                        instance.launch_time, datetime.now(timezone.utc), running_cost, remaining_balance]
+                print(Fore.BLUE + f"Allocating an instance ...", end=" ")
 
-                if os.path.isfile(self.usage_history):
-                    df = pd.read_pickle(self.usage_history)
-                else:
-                    df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+                instance.start()
+                instance.wait_until_running()
 
-                df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
-                df.to_pickle(self.usage_history)
-
-                instance.terminate()
-                instances.append(instance)
-
-        for instance in instances:
-            instance.wait_until_terminated()
-
+                node_name = self.get_instance_name(instance)
+                time.sleep(30)
+                print(f'\nInstance {node_name} is up.')
+                print("To connect to the instance, run:")
+                print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{instance.public_ip_address} or")
+                print(f"  skyway_connect --account={self.account_name} -J {instance_name}")
 
     def check_valid_user(self, user_name, verbose=False):
         if user_name not in self.users:
@@ -516,6 +678,31 @@ class AWS(Cloud):
         remaining_balance = float(user_budget) - float(accumulating_cost)
 
         return accumulating_cost, remaining_balance
+
+    def get_usage_history_from_db(self, user_name):
+        '''
+        compute the accumulating cost from the pkl database
+        and the remaining balance
+        '''
+        if user_name not in self.users:
+            raise Exception(f"{user_name} is not listed in the user group of this account.")
+                
+        user_budget = self.users[user_name]['budget']
+
+        if not os.path.isfile(self.usage_history):
+            print(f"Usage history {self.usage_history} is not available")
+            data = [user_name, "--", "--", "00:00:00", "00:00:00", "0.0", user_budget]
+            df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            #df = pd.DataFrame(columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
+            df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
+            df.to_pickle(self.usage_history)
+            return 0, user_budget
+
+        df = pd.read_pickle(self.usage_history)
+        df_user = df.loc[df['User'] == user_name]
+        
+        history = df_user[['User','InstanceID','InstanceType','Start','End']]
+        return history
 
     def get_budget_api(self):
         '''
@@ -749,3 +936,6 @@ class AWS(Cloud):
             print(tabulate(nodes, headers=['Name', 'Status', 'Type', 'Instance ID', 'ElapsedTime', 'RunningCost']))
 
         return total_cost
+
+    def get_private_key(self):
+        return self.my_ssh_private_key

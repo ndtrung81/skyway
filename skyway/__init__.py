@@ -18,7 +18,7 @@ from . import utils
 #   files: files to be copied to the cloud VMs
 
 if 'SKYWAYROOT' not in os.environ:
-    raise Exception('SKYWAYROOT is not set in envrionment.')
+    raise Exception('SKYWAYROOT is not yet set in the environment. Setting it to the path where the Python module skyway and the executables skyway_* reside.')
 
 cfg_path = os.environ['SKYWAYROOT'] + '/etc/'
 debug = 'SKYWAYDEBUG' in os.environ

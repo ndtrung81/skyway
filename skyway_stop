@@ -1,8 +1,9 @@
 #!/usr/bin/env python
-import argparse
-from datetime import datetime, timezone
-from io import StringIO
 import os
+import sys
+import yaml
+import subprocess
+import pandas
 from subprocess import PIPE, Popen
 
 import skyway
@@ -12,19 +13,25 @@ from skyway.cloud.azure import *
 from skyway.cloud.slurm import *
 from skyway.cloud.oci import *
 
-import colorama
-from colorama import Fore
+from datetime import datetime, timezone
+from io import StringIO
+import argparse
 
 # export SKYWAYROOT=/project/rcc/trung/skyway-github
-#./skyway_list --account=rcc-aws
+#./skyway_batch.py --account=rcc-aws --constraint=t1 --walltime=01:00:00 --script=run.sh
 
 class InstanceDescriptor:
-    def __init__(self, jobname: str, account_name: str, node_type: str, walltime: str, vendor_name: str):
+    def __init__(self, jobname: str, account_name: str, vendor_name: str, node_type=None, walltime=None):
         self.jobname = jobname
         self.account_name = account_name
-        self.node_type = node_type
-        self.walltime = walltime
         self.vendor_name = vendor_name
+
+        self.node_type = ""
+        self.walltime = ""
+        if node_type is not None:
+            self.node_type = node_type
+        if walltime is not None:
+            self.walltime = walltime
 
         self.account = None
         if 'aws' in vendor_name:
@@ -34,11 +41,17 @@ class InstanceDescriptor:
         elif 'azure' in vendor_name:
             self.account = AZURE(account_name)
         elif 'oci' in vendor_name:
-            self.account = OCI(account_name)            
+            self.account = OCI(account_name)
         elif 'midway3' in vendor_name:
             self.account = SLURMCluster(account_name)
 
         self.user = os.environ['USER']
+
+    def stopJob(self, node_names = [], instance_id=""):
+        if instance_id == "":
+            self.account.stop_nodes(node_names=node_names, need_confirmation=False)
+        else:
+            self.account.stop_nodes(IDs=[instance_id], need_confirmation=False)
 
     def getBalance(self):
         # retrieve from database for the given account
@@ -56,26 +69,29 @@ class InstanceDescriptor:
         return cost
   
     def list_nodes(self):
-        print(Fore.GREEN + f"Available node types under {self.account_name}")
-        self.account.get_node_types() 
-        return
+        nodes, list_of_nodes = self.account.list_nodes(verbose=False) 
+        return nodes
 
 if __name__ == "__main__":
 
-    colorama.init(autoreset=True)
+    node_type = None
+    walltime = None
+    provider = None
 
-    msg = "Skyway list the node/VM types of a cloud account"
+    msg = "Skyway cancel/terminate an instance"
     parser = argparse.ArgumentParser(description=msg)
-    parser.add_argument('-J', '--job-name', dest='jobname', default="your-run", help="Job name")
     parser.add_argument('-A', '--account', dest='account', default="", help="Account name")
-    parser.add_argument('--provider', dest='provider', default="", help="Vendor name: AWS, GCP, Azure, or RCC Midway")
-    parser.add_argument('--partition', dest='partition', default="", help="Partition")
+    parser.add_argument('-i', '--instance-id', dest='instance_id', default="", help="Instance ID")
+    parser.add_argument(dest='jobname', nargs='*', default="", help="Job name to cancel")
 
-    args = parser.parse_args()
-
-    job_name = args.jobname
+    args = parser.parse_args()    
     account_name = args.account
     provider = ""
+    instance_id = args.instance_id
+    if len(args.jobname) > 0:
+        job_name = args.jobname[0]
+    else:
+        job_name = ""
     
     if provider == "":
         # try to infer the vendor name from account
@@ -86,7 +102,7 @@ if __name__ == "__main__":
         elif 'azure' in account_name:
             vendor_name = "azure"
         elif 'oci' in account_name:
-            vendor_name = "oci"
+            vendor_name = "oci"            
         elif 'midway3' in account_name or 'rcc-staff' in account_name:
             vendor_name = "rcc-midway3"
     else:
@@ -97,10 +113,15 @@ if __name__ == "__main__":
     if skywayroot == "":
         raise Exception("SKYWAYROOT is not defined.")
 
+    if job_name == "" and instance_id == "":
+        print(f"Need a job name or an instance id to proceed")
+        quit
+
     # create an instance descriptor (like with the dashboard)
-    instanceDescriptor = InstanceDescriptor(job_name, account_name, "", "", vendor_name)
+    instanceDescriptor = InstanceDescriptor(job_name, account_name, vendor_name)
 
-    # listing all the node types
-    
-    nodes = instanceDescriptor.list_nodes()
+    # stop the job
+    node_names = [job_name]
+    instanceDescriptor.stopJob(node_names=node_names, instance_id=instance_id)
 
+        

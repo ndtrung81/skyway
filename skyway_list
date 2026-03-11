@@ -68,13 +68,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=msg)
     parser.add_argument('-J', '--job-name',  dest='jobname', default="your-run", help="Job name")
     parser.add_argument('-A', '--account', dest='account', default="", help="Account name")
-    parser.add_argument('--provider', dest='provider', default="", help="Vendor name: AWS, GCP, Azure, or RCC Midway")
     
     args = parser.parse_args()
 
     job_name = args.jobname
     account_name = args.account
-    provider = args.provider.lower()
+    provider = ""
     
     if provider == "":
         # try to infer the vendor name from account

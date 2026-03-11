@@ -46,6 +46,9 @@ class InstanceDescriptor:
         accumulating_cost, remaining_balance = self.account.get_cost_and_usage_from_db(user_name=user_name)
         return user_budget, accumulating_cost, remaining_balance
 
+    def getUsageHistory(self, user_name):
+        df = self.account.get_usage_history_from_db(user_name=user_name)
+        return df
 
 if __name__ == "__main__":
 
@@ -58,6 +61,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=msg)
     parser.add_argument('-u', '--user',  dest='username', default=default_user, help="User name")
     parser.add_argument('-A', '--account', dest='account', default="", help="Account name")
+    parser.add_argument('--byjob', dest='byjob', action='store_true', default=False, help="Show jobs if specified")
     parser.add_argument('--provider', dest='provider', default="", help="Vendor name: AWS, GCP, Azure, or RCC Midway")
     
     args = parser.parse_args()
@@ -65,7 +69,8 @@ if __name__ == "__main__":
     user_name = args.username
     account_name = args.account
     provider = args.provider.lower()
-    
+    byjob = args.byjob
+
     if provider == "":
         # try to infer the vendor name from account
         if 'aws' in account_name:
@@ -91,8 +96,17 @@ if __name__ == "__main__":
 
     # usage
     headers=["User", 'Allocation', 'Usage', 'Balance']
-    user_budget, usage, balance = instanceDescriptor.getUsage(user_name)   
+    user_budget, usage, balance = instanceDescriptor.getUsage(user_name)
 
     data = [[user_name, user_budget, usage, balance]]
     print(tabulate(data, headers=headers))
 
+    if byjob == True:
+        df = instanceDescriptor.getUsageHistory(user_name)
+
+        if df.empty == True:
+            headers = ['User','InstanceID','InstanceType','Start','End']
+            print(tabulate([], headers=headers))
+            print("")
+        else:
+            print(df)
