@@ -334,17 +334,19 @@ class AZURE(Cloud):
                 public_ip_address = network_client.public_ip_addresses.get(
                     resource_group_name, public_ip_name
                 )
-                ip = public_ip_address.ip_address
-                cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{ip} 'sudo shutdown -P +{walltime_in_minutes}' "
+                public_ip = public_ip_address.ip_address
+                cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{public_ip} 'sudo shutdown -P +{walltime_in_minutes}' "
                 time.sleep(30)
                 subprocess.run(cmd, shell=True, text=True, capture_output=True)
+
+                print(f"Instance public IP: {public_ip}")
 
                 # execute the post boot script on the VM
                 # need to install gcsfuse or nfs-utils on the VM (or having an image that has gcsfuse installed) to mount available storage
                 if self.post_boot_script != "":
                     script_file = os.environ['SKYWAYROOT'] + "/etc/accounts/" + self.post_boot_script
                     script_cmd = utils.script2cmd(script_file)
-                    cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{ip} '{script_cmd}' "
+                    cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{public_ip} '{script_cmd}' "
                     p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
         return nodes

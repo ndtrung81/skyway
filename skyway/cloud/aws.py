@@ -286,7 +286,8 @@ class AWS(Cloud):
             print("To connect to the instance, run:")
             print(f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com or ")
             print(f"  skyway_connect --account={self.account_name} -J {node_names[inode]}")
-
+            print(f"Instance public IP: {ip}")
+            
             cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
 
             cmd += f" 'sudo shutdown -P +{walltime_in_minutes}' "
@@ -308,6 +309,8 @@ class AWS(Cloud):
             cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
             cmd += f" 'sudo mkdir -p /cloud/rcc-aws; sudo mount -t nfs {io_server}:/cloud/rcc-aws /cloud/rcc-aws' "
             p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+
+
         return nodes
 
     def connect_node(self, instance_ID, separate_terminal=True):

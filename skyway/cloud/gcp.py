@@ -402,6 +402,8 @@ class GCP(Cloud):
                 print("To connect to the instance, run:")
                 print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} or")
                 print(f"  skyway_connect --account={self.account_name} -J {node.name}")
+                print(f"Instance public IP: {host}") 
+
             except libcloud.common.google.ResourceNotFoundError as e:
                 print(f'Error: Resource not found. Details: {e}')
             except libcloud.common.google.GoogleBaseError as e:
