@@ -571,6 +571,15 @@ class GCP(Cloud):
                 creation_time = datetime.strptime(creation_time_str, '%Y-%m-%dT%H:%M:%S.%f%z')
 
                 time.sleep(30)
+
+                # execute the post boot script on the VM
+                # need to install gcsfuse or nfs-utils on the VM (or having an image that has gcsfuse installed) to mount available storage
+                if self.post_boot_script != "":
+                    script_file = os.environ['SKYWAYROOT'] + "/etc/accounts/" + self.post_boot_script
+                    script_cmd = utils.script2cmd(script_file)
+                    cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} '{script_cmd}' "
+                    p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+
                 print(f'\nInstance {node.name} is up.')
                 print("To connect to the instance, run:")
                 print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{node.public_ips[0]} or")
