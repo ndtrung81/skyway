@@ -333,6 +333,12 @@ class GCP(Cloud):
                 if image_id != "":
                     vm_image = image_id
 
+                # retrieve the public key from the private key
+                cmd = f"ssh-keygen -y -f {self.my_ssh_private_key}"
+                p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+                public_key_from_pem = p.stdout.split(' ')[1].strip()
+                user_name_pub_key = f"{user_name}:ssh-rsa {public_key_from_pem}"
+
                 node = self.driver.create_node(node_name,
                                                 size = node_cfg['name'],
                                                 image = vm_image, 
@@ -348,7 +354,8 @@ class GCP(Cloud):
                                                 ex_accelerator_type = gpu_type,
                                                 ex_accelerator_count = gpu_count,
                                                 ex_on_host_maintenance = 'TERMINATE',
-                                                ex_tags = tags,)
+                                                ex_tags = tags,
+                                                ex_metadata = {'ssh-keys': user_name_pub_key },)
                 self.driver.wait_until_running([node])
 
                 # record node_type, creation time
@@ -398,18 +405,6 @@ class GCP(Cloud):
                     script_cmd = utils.script2cmd(script_file)
                     cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} '{script_cmd}' "
                     p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
-
-                # check if the provided public and private key pair match
-                cmd = f"ssh-keygen -y -f {self.my_ssh_private_key}"
-                p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
-                public_key_from_pem = p.stdout.split(' ')[1].strip()
-
-                if public_key_from_pem != "":
-                    append_authorized_keys = f"echo \"{public_key_from_pem}\" >> ~/.ssh/authorized_keys"
-                    cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} '{append_authorized_keys}' "
-                    p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
-                else:
-                    print(f"There is no valid SSH key pair. Check {self.my_ssh_private_key}")
 
                 print("To connect to the instance, run:")
                 print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} or")
@@ -547,7 +542,7 @@ class GCP(Cloud):
         # shutdown the instance after the walltime (in minutes)
         pt = datetime.strptime(walltime_str, "%H:%M:%S")
         walltime_in_minutes = int(pt.hour * 60 + pt.minute + pt.second/60)
-        
+
         for node in self.driver.list_nodes():
             if node.state != "stopped":
                 continue
