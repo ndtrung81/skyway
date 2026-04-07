@@ -75,12 +75,9 @@ class GCP(Cloud):
             print(f"An error occurred: {e}")
         
         pem_file_full_path = account_path + self.account['key_name'] + '.pem'
-        public_file_full_path = account_path + self.account['key_name'] + '.pub'
         self.my_ssh_private_key =  f"~/.my_gcp_ssh_key.pem"
         cmd = f"cp {pem_file_full_path} {self.my_ssh_private_key}; chmod 600 {self.my_ssh_private_key}"
         p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
-
-        self.my_ssh_public_key =  public_file_full_path
 
         assert(self.driver != False)
         return
@@ -406,24 +403,13 @@ class GCP(Cloud):
                 cmd = f"ssh-keygen -y -f {self.my_ssh_private_key}"
                 p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
                 public_key_from_pem = p.stdout.split(' ')[1].strip()
-                cmd = f"cat {self.my_ssh_public_key}"
-                p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
-                public_key = p.stdout.split(' ')[1].strip()
-                if public_key_from_pem != public_key:
-                    print(f"WARNING: pem gives public key {public_key_from_pem} does not match with {public_key}")
 
-                if self.my_ssh_public_key != "":
-                    # get the public key from the public key file
-                    public_key_str = utils.script2cmd(self.my_ssh_public_key)
-                    public_key_str = public_key_str.replace(';', '')
-                    #print(f"{self.my_ssh_public_key}: {public_key_str}")                    
-                    
-                    append_authorized_keys = f"echo \"{public_key_str}\" >> ~/.ssh/authorized_keys"
-                    #print(f"Append authorized key to VM ~/.ssh: {append_authorized_keys}")
+                if public_key_from_pem != "":
+                    append_authorized_keys = f"echo \"{public_key_from_pem}\" >> ~/.ssh/authorized_keys"
                     cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} '{append_authorized_keys}' "
                     p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
                 else:
-                    print("There is no valid public key.")
+                    print(f"There is no valid SSH key pair. Check {self.my_ssh_private_key}")
 
                 print("To connect to the instance, run:")
                 print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} or")
