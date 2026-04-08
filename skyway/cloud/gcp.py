@@ -448,15 +448,15 @@ class GCP(Cloud):
 
             # set up SSH tunneling to the localhost
             port=random.randint(15000, 30000)
-            cmd = f"ssh -o StrictHostKeyChecking=accept-new -f -N -L {port}:localhost:{port} {username}@{public_ip}"
+            cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new -f -N -L {port}:localhost:{port} {username}@{public_ip}"
             print(f"SSH tunneling to the VM using port = {port}")
             os.system(cmd)
 
             if separate_terminal == True:
                 cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
-                cmd += f" 'module purge; ssh -o StrictHostKeyChecking=accept-new {username}@{public_ip}; exec bash' "
+                cmd += f" 'module purge; ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip}; exec bash' "
             else:
-                cmd = f"ssh -o StrictHostKeyChecking=accept-new {username}@{public_ip}"
+                cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip}"
 
             #os.system(cmd)
             subprocess.run(cmd, shell=True, text=True, capture_output=True)
