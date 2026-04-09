@@ -22,13 +22,14 @@ from skyway.cloud.slurm import *
 from skyway.cloud.oci import *
 
 class InstanceDescriptor:
-    def __init__(self, jobname: str, account_name: str, node_type: str, walltime: str, vendor_name: str, image_id: str):
+    def __init__(self, jobname: str, account_name: str, node_type: str, walltime: str, vendor_name: str, image_id: str, separate_terminal: bool):
         self.jobname = jobname
         self.account_name = account_name
         self.node_type = node_type
         self.walltime = walltime
         self.vendor_name = vendor_name
         self.image_id = image_id
+        self.separate_terminal = separate_terminal
 
         self.account = None
         if 'aws' in vendor_name:
@@ -85,7 +86,7 @@ class InstanceDescriptor:
 
         print(f"Waiting for the instance to be ready before connecting (30s)...")
         time.sleep(30)
-        self.account.connect_node(instanceID)
+        self.account.connect_node(instanceID, self.separate_terminal)
 
     def terminateJob(self, node_names = []):
         if "midway3" in self.vendor_name:
@@ -124,6 +125,7 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--constraint', dest='constraint', default="", help="Node type")
     parser.add_argument('-t', '--time', dest='walltime', default="", help="Walltime")
     parser.add_argument('-i', '--image-id', dest='image_id', default="", help="Custom boot image")
+    parser.add_argument('-s', '--separate-terminal', action='store_true', default=False, help="Open in a separate terminal")
     
     args = parser.parse_args()
 
@@ -132,6 +134,7 @@ if __name__ == "__main__":
     node_type = args.constraint
     walltime = args.walltime
     image_id = args.image_id
+    separate_terminal = args.separate_terminal
     provider = ""
     
     if provider == "":
@@ -155,7 +158,7 @@ if __name__ == "__main__":
         raise Exception("SKYWAYROOT is not defined.")
 
     # create an instance descriptor (like with the dashboard)
-    instanceDescriptor = InstanceDescriptor(job_name, account_name, node_type, walltime, vendor_name, image_id)
+    instanceDescriptor = InstanceDescriptor(job_name, account_name, node_type, walltime, vendor_name, image_id, separate_terminal)
 
     # submit job
     nodes = instanceDescriptor.submitJob()

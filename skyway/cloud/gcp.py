@@ -458,8 +458,8 @@ class GCP(Cloud):
             else:
                 cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip}"
 
-            #os.system(cmd)
-            subprocess.run(cmd, shell=True, text=True, capture_output=True)
+            os.system(cmd)
+
         else:
             print(f"Node {node_id} does not exist.")
 
