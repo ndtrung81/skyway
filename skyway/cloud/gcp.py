@@ -333,6 +333,12 @@ class GCP(Cloud):
                 if image_id != "":
                     vm_image = image_id
 
+                # retrieve the public key from the private key
+                cmd = f"ssh-keygen -y -f {self.my_ssh_private_key}"
+                p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+                public_key_from_pem = p.stdout.split(' ')[1].strip()
+                user_name_pub_key = f"{user_name}:ssh-rsa {public_key_from_pem}"
+
                 node = self.driver.create_node(node_name,
                                                 size = node_cfg['name'],
                                                 image = vm_image, 
@@ -348,7 +354,8 @@ class GCP(Cloud):
                                                 ex_accelerator_type = gpu_type,
                                                 ex_accelerator_count = gpu_count,
                                                 ex_on_host_maintenance = 'TERMINATE',
-                                                ex_tags = tags,)
+                                                ex_tags = tags,
+                                                ex_metadata = {'ssh-keys': user_name_pub_key },)
                 self.driver.wait_until_running([node])
 
                 # record node_type, creation time
@@ -402,12 +409,14 @@ class GCP(Cloud):
                 print("To connect to the instance, run:")
                 print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} or")
                 print(f"  skyway_connect --account={self.account_name} -J {node.name}")
+                print(f"Instance public IP: {host}") 
+
             except libcloud.common.google.ResourceNotFoundError as e:
                 print(f'Error: Resource not found. Details: {e}')
             except libcloud.common.google.GoogleBaseError as e:
                 print(f'Google Cloud error occurred: {e}')
             except Exception as e:
-                print(f"Failed to create %s. Reason: %s" % (node_name, str(e)))
+                print(f"Failed to create {node_name}. Reason: {str(e)}")
         
         return nodes
 
@@ -439,18 +448,18 @@ class GCP(Cloud):
 
             # set up SSH tunneling to the localhost
             port=random.randint(15000, 30000)
-            cmd = f"ssh -o StrictHostKeyChecking=accept-new -f -N -L {port}:localhost:{port} {username}@{public_ip}"
+            cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new -f -N -L {port}:localhost:{port} {username}@{public_ip}"
             print(f"SSH tunneling to the VM using port = {port}")
             os.system(cmd)
 
             if separate_terminal == True:
                 cmd = "gnome-terminal -q --title='Connecting to the node' -- bash -c "
-                cmd += f" 'module purge; ssh -o StrictHostKeyChecking=accept-new {username}@{public_ip}; exec bash' "
+                cmd += f" 'module purge; ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip}; exec bash' "
             else:
-                cmd = f"ssh -o StrictHostKeyChecking=accept-new {username}@{public_ip}"
+                cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip}"
 
-            #os.system(cmd)
-            subprocess.run(cmd, shell=True, text=True, capture_output=True)
+            os.system(cmd)
+
         else:
             print(f"Node {node_id} does not exist.")
 
@@ -533,7 +542,7 @@ class GCP(Cloud):
         # shutdown the instance after the walltime (in minutes)
         pt = datetime.strptime(walltime_str, "%H:%M:%S")
         walltime_in_minutes = int(pt.hour * 60 + pt.minute + pt.second/60)
-        
+
         for node in self.driver.list_nodes():
             if node.state != "stopped":
                 continue
@@ -571,6 +580,15 @@ class GCP(Cloud):
                 creation_time = datetime.strptime(creation_time_str, '%Y-%m-%dT%H:%M:%S.%f%z')
 
                 time.sleep(30)
+
+                # execute the post boot script on the VM
+                # need to install gcsfuse or nfs-utils on the VM (or having an image that has gcsfuse installed) to mount available storage
+                if self.post_boot_script != "":
+                    script_file = os.environ['SKYWAYROOT'] + "/etc/accounts/" + self.post_boot_script
+                    script_cmd = utils.script2cmd(script_file)
+                    cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} '{script_cmd}' "
+                    p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+
                 print(f'\nInstance {node.name} is up.')
                 print("To connect to the instance, run:")
                 print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{node.public_ips[0]} or")

@@ -269,6 +269,8 @@ class OCI(Cloud):
         cmd = f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip} or"
         print(f"  skyway_connect --account={self.account_name} -J {instance.display_name}")
         print(f"{cmd}")
+        print(f"Instance public IP: {public_ip}")
+
         cmd += f" -t 'sudo shutdown -P +{walltime_in_minutes}' "
 
         print("Preparing the instance...")
