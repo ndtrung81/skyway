@@ -93,7 +93,7 @@ if __name__ == "__main__":
         instanceDescriptor.list_users()
         sys.exit()
 
-    print(Fore.GREEN + f"Skyway v2.0")
+    print(Fore.GREEN + f"Skyway v2.1")
     print(f"Copyright 2019-2026 Research Computing Center, University of Chicago")
     pwd = os.environ['PWD']
     cmd = f"cd {skywayroot}; git describe --always; cd {pwd}"
