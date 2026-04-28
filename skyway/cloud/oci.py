@@ -242,7 +242,7 @@ class OCI(Cloud):
         launch_time = instance.time_created.strftime("%Y-%m-%dT%H:%M:%S.%f%z")
         nodes[node_names[0]] = [instance_type, launch_time, str(public_ip)]
 
-        print(f"\nCreated instance: {instance.display_name}")
+        print(f"\n\u2713 Created instance: {instance.display_name}")
 
         # record the running time and cost at launch time and expected walltime
         # then if destroy_nodes() is invoked then updated the end time and cost
@@ -265,17 +265,17 @@ class OCI(Cloud):
         df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
         df.to_pickle(self.usage_history)
         
-        print(f"To connect to the instance, run:")
+        cmd = f"  ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip} "
+        cmd += f" 'sudo shutdown -P +{walltime_in_minutes}' "
+        print("\u2713 Preparing the instance...")
+        time.sleep(30)
+        p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+
+        print(f"\u2713 To connect to the instance, run:")
         cmd = f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@{public_ip} or"
         print(f"  skyway_connect --account={self.account_name} -J {instance.display_name}")
         print(f"{cmd}")
-        print(f"Instance public IP: {public_ip}")
-
-        cmd += f" -t 'sudo shutdown -P +{walltime_in_minutes}' "
-
-        print("Preparing the instance...")
-        time.sleep(30)
-        p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+        print(f"Instance public IP: {public_ip}")       
 
         # execute the post boot script on the VM
         #   need to install nfs-utils on the VM (or having an image that has nfs-utils installed)
@@ -305,6 +305,7 @@ class OCI(Cloud):
             print("Invalid public IP")
             return
 
+        print(f"\u2713 Connecting to instance public IP address: {public_ip}")
         username = "opc"
 
         # set up SSH tunneling to the localhost

@@ -329,12 +329,14 @@ class AZURE(Cloud):
                 creation_time_str = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f%z')
                 nodes[node_name] = [str(node.id), node_type, creation_time_str]
 
-                print(f"\nCreated instance: {node_name}")
+                print(f"\n\u2713 Created instance: {node_name}")
                 # ssh to the node and execute a shutdown command scheduled for walltime
                 public_ip_address = network_client.public_ip_addresses.get(
                     resource_group_name, public_ip_name
                 )
                 public_ip = public_ip_address.ip_address
+
+                print("\u2713 Preparing the instance...")
                 cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{public_ip} 'sudo shutdown -P +{walltime_in_minutes}' "
                 time.sleep(30)
                 subprocess.run(cmd, shell=True, text=True, capture_output=True)
@@ -396,27 +398,28 @@ class AZURE(Cloud):
             return
 
         node_name = vm.name
-        host = self.get_host_ip(node_name)
+        public_ip = self.get_host_ip(node_name)
         user_name = os.environ['USER']
-        print("Connecting to host: " + host)
+        
+        print(f"\u2713 Connecting to instance public IP address: {public_ip}")
 
         node_info = {
             'private_key' : self.my_ssh_private_key,
-            'login' : f"{user_name}@{host}",
+            'login' : f"{user_name}@{public_ip}",
         }
 
         # set up SSH tunneling to the localhost
         port=random.randint(15000, 30000)
-        cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new -f -N -L {port}:localhost:{port} {user_name}@{host}"
-        print(f"port = {port}")
+        cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new -f -N -L {port}:localhost:{public_ip} {user_name}@{public_ip}"
+        print(f"SSH tunneling to the VM using port = {port}")
         os.system(cmd)
 
         if separate_terminal == True:
             cmd = "gnome-terminal --title='Connecting to the node' -- bash -c "
-            cmd += f" 'ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host}; exec bash' "
+            cmd += f" 'ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{public_ip}; exec bash' "
             os.system(cmd)
         else:
-            cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host}"
+            cmd = f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{public_ip}"
             os.system(cmd)
 
         return node_info
