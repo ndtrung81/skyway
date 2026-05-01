@@ -260,7 +260,7 @@ class AWS(Cloud):
             ip = instance.public_ip_address
             ip_converted = ip.replace('.','-')
 
-            print(f"\nCreated instance: {node_names[inode]}")
+            print(f"\n\u2713 Created instance: {node_names[inode]}")
 
             # record the running time and cost at launch time and expected walltime
             # then if destroy_nodes() is invoked then updated the end time and cost
@@ -283,17 +283,16 @@ class AWS(Cloud):
             df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
             df.to_pickle(self.usage_history)
             
-            print("To connect to the instance, run:")
+            print("\u2713 Preparing the instance...")
+            time.sleep(30)
+            cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
+            cmd += f" 'sudo shutdown -P +{walltime_in_minutes}' "
+            p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+
+            print("\u2713 To connect to the instance, run:")
             print(f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com or ")
             print(f"  skyway_connect --account={self.account_name} -J {node_names[inode]}")
             print(f"Instance public IP: {ip}")
-            
-            cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {username}@ec2-{ip_converted}.{region}.compute.amazonaws.com "
-
-            cmd += f" 'sudo shutdown -P +{walltime_in_minutes}' "
-            print("Preparing the instance...")
-            time.sleep(10)
-            p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
             # execute the post boot script on the VM
             # need to install nfs-utils on the VM (or having an image that has nfs-utils installed) to mount available storage
@@ -321,7 +320,7 @@ class AWS(Cloud):
         """
         print(f"Instance ID: {instance_ID}")
         ip = self.get_host_ip(instance_ID)
-        print(f"Connecting to instance public IP address: {ip}")
+        print(f"\u2713 Connecting to instance public IP address: {ip}")
 
         username = self.vendor['username']
         region = self.account['region']

@@ -114,7 +114,11 @@ def parse_script(filename):
     account = ""
     constraint = ""
     walltime = ""
-    
+    ntasks_per_node = 1
+    cpus_per_task = 1
+    mem = 0
+    gpus = 0
+
     with open(filename, 'r') as f:
         lines = f.readlines()
         for line in lines:
@@ -134,7 +138,15 @@ def parse_script(filename):
                     if args[0] == "--constraint":
                         constraint = args[1]
                     if args[0] == "--time":
-                        walltime = args[1]                        
+                        walltime = args[1]
+                    if args[0] == "--ntasks-per-node": 
+                        ntasks_per_node = int(args[1])
+                    if args[0] == "--cpus-per-task": 
+                        cpus_per_task = int(args[1])
+                    if args[0] == "--mem": 
+                        mem = int(args[1].replace('GB',''))
+                    if args[0] == "--gres": 
+                        gpus = int(args[1].split(':')[1])
             else:
                 continue
 
@@ -142,6 +154,10 @@ def parse_script(filename):
              'account': account,
              'constraint': constraint,
              'walltime': walltime,
+             'ntasks_per_node': ntasks_per_node,
+             'cpus_per_task': cpus_per_task,
+             'mem': mem,
+             'gpus': gpus,
             }
 
 if __name__ == "__main__":
@@ -163,36 +179,50 @@ if __name__ == "__main__":
     if skywayroot == "":
         raise Exception("SKYWAYROOT is not defined.")
 
-    
-    # list all node types in the accounts that the group rcc have access to
-    all_accounts = account.accounts()
-
     data = []
-    # iterate through the accounts and find the similar node types
-    for acct_name in all_accounts:
-        if "rcc" in acct_name:
-            if 'aws' in acct_name:
-                acct = AWS(acct_name)
-            elif 'gcp' in acct_name:
-                acct = GCP(acct_name)
-            elif 'azure' in acct_name:
-                acct = AZURE(acct_name)
-            elif 'oci' in acct_name:
-                acct = OCI(acct_name)
-            elif 'midway' in acct_name:
-                acct = SLURMCluster(acct_name)
-            else:
-                continue           
-            if node_type in acct.vendor['node-types']:
-                data.append([acct_name,
-                             acct.vendor['node-types'][node_type]['name'],
-                             acct.vendor['node-types'][node_type]['price'],
-                             acct.onpremises,
-                            ])
-            
-    print("Available accounts and instances for {script}:")
-    print(tabulate(data, headers=['Account', 'Instance Type', 'Per-hour Cost', 'On-premises']))
-    print("")
 
+    account = args['account']
+    cloud_path = os.environ['SKYWAYROOT'] + '/etc/'
+    vendor_cfg = utils.load_config('cloud', cloud_path)
+
+    vendor = account.split('-')[1]
+    print(f"Job submitted with cloud account {account}")
+    print(f"Cloud vendor: {vendor}")
+    cores = int(args['ntasks_per_node'])*int(args['cpus_per_task'])
+    mem = int(args['mem'])
+    gpus = int(args['gpus']) 
+    print(f"Requested resource:")
+    print(f"  + CPU cores = {cores}")
+    print(f"  + Memory = {mem} GB")
+    print(f"  + GPUs = {gpus}")
+
+    # search for the node type that meet the requirements
+    if vendor in vendor_cfg:
+        for node_type in vendor_cfg[vendor]['node-types']:            
+            node_cores = int(vendor_cfg[vendor]['node-types'][node_type]['cores'])
+            node_memgb = int(vendor_cfg[vendor]['node-types'][node_type]['memgb'])
+
+            if 'gpu' in vendor_cfg[vendor]['node-types'][node_type]:
+                node_gpus = vendor_cfg[vendor]['node-types'][node_type]['gpu']
+                node_gpu_type = vendor_cfg[vendor]['node-types'][node_type]['gpu-type']
+            else:
+                node_gpus = 0
+                node_gpu_type = ""
+
+            # skip node types that do not meet the requirement
+            if node_cores < cores or node_memgb < mem or node_gpus < gpus:
+                continue
+
+            data.append([vendor_cfg[vendor]['node-types'][node_type]['name'],
+                         vendor_cfg[vendor]['node-types'][node_type]['cores'],
+                         vendor_cfg[vendor]['node-types'][node_type]['memgb'],
+                         node_gpus, 
+                         node_gpu_type,         
+                         vendor_cfg[vendor]['node-types'][node_type]['price']
+                            ])
+
+    print(f"Suggested node types for {script}:")
+    print(tabulate(data, headers=['Instance Type', 'Cores', 'Mem (GB)', 'GPUs', 'GPU type', 'Per-hour Cost, $']))
+    print("")
 
     

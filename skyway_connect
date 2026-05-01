@@ -64,7 +64,7 @@ class InstanceDescriptor:
         
         if "midway3" in self.vendor_name:
             instanceID = self.account.get_host_ip(self.jobname)
-            print(f"Waiting for the instance to be ready before connecting (10s)...")
+            print(f"\u2713 Waiting for the instance to be ready before connecting (10s)...")
             time.sleep(10)
             self.account.connect_node(instanceID)
 
@@ -73,7 +73,7 @@ class InstanceDescriptor:
             if instanceID == '':
                 raise Exception(f'Cannot find a valid instance ID for {self.jobname}. Check the running VMs with the skyway list command.')
 
-            print(f"Waiting for the instance to be ready before connecting (10s)...")
+            print(f"\u2713 Waiting for the instance to be ready before connecting (10s)...")
             time.sleep(10)
             self.account.connect_node(instanceID, self.separate_terminal)
 

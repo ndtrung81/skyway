@@ -20,6 +20,7 @@ from skyway.cloud.gcp import *
 from skyway.cloud.azure import *
 from skyway.cloud.slurm import *
 from skyway.cloud.oci import *
+from skyway import utils
 
 class InstanceDescriptor:
     def __init__(self, jobname: str, account_name: str, node_type: str, walltime: str, vendor_name: str, image_id: str, separate_terminal: bool):
@@ -84,8 +85,9 @@ class InstanceDescriptor:
                 # try again in 5 seconds
                 time.sleep(5)
 
-        print(f"Waiting for the instance to be ready before connecting (30s)...")
-        time.sleep(30)
+        #print(f"Waiting for the instance to be ready before connecting (30s)...")
+        #time.sleep(30)
+        utils.wait_progress(total_time=30, description="Waiting for the instance to be ready before connecting (30s):")
         self.account.connect_node(instanceID, self.separate_terminal)
 
     def terminateJob(self, node_names = []):

@@ -4,8 +4,10 @@
 # Maintainer: Yuxing Peng, Trung Nguyen
 
 import os
-import yaml
+import time
+from tqdm import tqdm
 from subprocess import PIPE, Popen
+import yaml
 
 def load_config(cfg_name, cfg_path):
     cfg_file = cfg_path + cfg_name + '.yaml'
@@ -59,3 +61,9 @@ def sendmail(email_address, to, subject, body):
         body
     ])
     proc("echo \"" + mail + "\" | sendmail -v '" + to + "'")
+
+# wait for total time (seconds) for steps and with the description
+def wait_progress(total_time, description):
+    
+    for _ in tqdm(range(total_time), desc=description, bar_format="{l_bar}{bar} | {n_fmt}/{total_fmt}"):
+        time.sleep(1)

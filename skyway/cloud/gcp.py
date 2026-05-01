@@ -365,7 +365,7 @@ class GCP(Cloud):
                 node_type = node_cfg['name']
                 nodes[node_name] = [node_type, creation_time_str, node.public_ips[0]]
 
-                print(f'\nCreated instance: {node.name}\n')
+                print(f'\n\u2713 Created instance: {node.name}\n')
 
                 # ssh to the node and execute a shutdown command scheduled for walltime
                 host = node.public_ips[0]
@@ -393,7 +393,7 @@ class GCP(Cloud):
                 df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
                 df.to_pickle(self.usage_history)
 
-                print("Preparing the instance...")
+                print("\u2713 Preparing the instance...")
                 time.sleep(30)
                 cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} 'sudo shutdown -P +{walltime_in_minutes}' "
                 p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
@@ -406,7 +406,7 @@ class GCP(Cloud):
                     cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} '{script_cmd}' "
                     p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
-                print("To connect to the instance, run:")
+                print("\u2713 To connect to the instance, run:")
                 print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} or")
                 print(f"  skyway_connect --account={self.account_name} -J {node.name}")
                 print(f"Instance public IP: {host}") 
@@ -444,7 +444,7 @@ class GCP(Cloud):
         if node is not None:
             public_ip = node.public_ips[0]
             username = os.environ['USER']
-            print(f"Connecting to instance public IP address: {public_ip}")
+            print(f"\u2713 Connecting to instance public IP address: {public_ip}")
 
             # set up SSH tunneling to the localhost
             port=random.randint(15000, 30000)
