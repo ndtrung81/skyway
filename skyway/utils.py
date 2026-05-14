@@ -3,11 +3,17 @@
 
 # Maintainer: Yuxing Peng, Trung Nguyen
 
+import itertools
 import os
+import sys
+import threading
+import time
 import yaml
 from subprocess import PIPE, Popen
 
-def load_config(cfg_name, cfg_path):
+def load_config(cfg_name, cfg_path=None):
+    if cfg_path is None:
+        cfg_path = os.environ['SKYWAYROOT'] + '/etc/'
     cfg_file = cfg_path + cfg_name + '.yaml'
     if not os.path.isfile(cfg_file):
         raise Exception(f'Configuration file {cfg_file} cannot be found.')
@@ -23,17 +29,17 @@ def proc(command, strict=True):
     stdout, stderr = p.communicate()
     out = stdout.decode('ascii').strip()
     err = stderr.decode('utf-8').strip()
-    
-    if strict and err !="":
+
+    if strict and err != "":
         raise Exception('Shell error: ' + err + '\nCommand: ' + command)
-    
+
     if out == "": return []
     else: return out.split('\n')
 
 # read in a script, combine lines into a string, excluding empty lines and comments starting with #
 def script2cmd(script_name: str):
     cmd = ""
-    with open(script_name, 'r') as f:        
+    with open(script_name, 'r') as f:
         lines = f.readlines()
 
         for line in lines:
@@ -48,7 +54,7 @@ def script2cmd(script_name: str):
 # get the username of a uid
 def get_username(uid):
     uid = proc("getent passwd " + uid + " | awk -F: '{print $1}'")
-    return None if uid==[] else uid[0]
+    return None if uid == [] else uid[0]
 
 def sendmail(email_address, to, subject, body):
     mail = "\r\n".join([
@@ -59,3 +65,24 @@ def sendmail(email_address, to, subject, body):
         body
     ])
     proc("echo \"" + mail + "\" | sendmail -v '" + to + "'")
+
+def spinner_wait(seconds: float, message: str = "Please wait"):
+    """Display an animated spinner while waiting for the given number of seconds."""
+    frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+    stop_event = threading.Event()
+
+    def _spin():
+        for frame in itertools.cycle(frames):
+            if stop_event.is_set():
+                break
+            sys.stdout.write(f'\r{frame} {message}...')
+            sys.stdout.flush()
+            time.sleep(0.1)
+
+    t = threading.Thread(target=_spin, daemon=True)
+    t.start()
+    time.sleep(seconds)
+    stop_event.set()
+    t.join()
+    sys.stdout.write(f'\r  {message}: done.   \n')
+    sys.stdout.flush()
