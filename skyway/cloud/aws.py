@@ -216,7 +216,7 @@ class AWS(Cloud):
         else:
             cmd = (f"ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new"
                    f" {username}@{ssh_host}")
-        subprocess.run(cmd, shell=True, text=True, capture_output=True)
+        os.system(cmd)
 
         return {
             'private_key': self.my_ssh_private_key,
