@@ -15,7 +15,7 @@ from .core import Cloud
 from .. import utils
 from ..utils import spinner_wait
 
-from colorama import Fore
+from colorama import Fore, Style
 import pandas as pd
 
 import oci
@@ -299,7 +299,7 @@ class OCI(Cloud):
             data = [instance_user_name, instance.id, instance.shape,
                     instance.time_created, end_time, running_cost, remaining_balance]
             self._update_usage_db(data, instance.id, end_time=end_time)
-            print(Fore.GREEN + f"Instance {instance.display_name} terminated.")
+            print(Fore.GREEN + f"✓ Instance {instance.display_name} terminated." + Style.RESET_ALL)
 
     def stop_nodes(self, IDs=[], node_names=[], need_confirmation=True):
         if isinstance(node_names, str): node_names = [node_names]
