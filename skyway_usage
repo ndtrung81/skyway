@@ -105,8 +105,10 @@ if __name__ == "__main__":
         df = instanceDescriptor.getUsageHistory(user_name)
 
         if df.empty == True:
-            headers = ['User','InstanceID','InstanceType','Start','End']
+            headers = ['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance']
             print(tabulate([], headers=headers))
             print("")
         else:
+            headers = ['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance']
+
             print(df)

@@ -167,7 +167,7 @@ class GCP(Cloud):
         df = pd.read_pickle(self.usage_history)
         df_user = df.loc[df['User'] == user_name]
         
-        history = df_user[['User','InstanceID','InstanceType','Start','End']]
+        history = df_user[['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance']]
         return history
 
     def get_node_types(self):
