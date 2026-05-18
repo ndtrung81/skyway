@@ -110,7 +110,7 @@ class AZURE(Cloud):
         for node in compute_client.virtual_machines.list_all():
 
             # Get the creation time of the instance
-            
+
             # Convert the creation time from string to datetime object
             # Azure returns 7-digit after '.' for seconds, so need to truncate the last digit 
             # to cast into %Y-%m-%dT%H:%M:%S.%f%z format
@@ -870,6 +870,7 @@ class AZURE(Cloud):
     def get_running_cost(self, verbose=True):
 
         current_time = datetime.now(timezone.utc)
+        user_name = os.environ['USER']
 
         nodes = []
         total_cost = 0.0
@@ -884,6 +885,10 @@ class AZURE(Cloud):
             if state.lower() == "running":
                 # Get the creation time of the instance
                 #creation_time_str = node.extra.get('properties')['timeCreated']  # Azure
+
+                node_user_name = self.get_instance_user_name(node)
+                if user_name != node_user_name:
+                    continue
 
                 if creation_time_str:
                     # Convert the creation time from string to datetime object

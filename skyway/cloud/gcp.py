@@ -825,13 +825,17 @@ class GCP(Cloud):
     def get_running_cost(self, verbose=True):
 
         current_time = datetime.now(timezone.utc)
-
+        user_name = os.environ['USER']
         nodes = []
         total_cost = 0.0
         for node in self.driver.list_nodes():
             if self.get_instance_name(node) in self.account['protected_nodes']:
                 continue
             if node.state == "running":
+                node_user_name = self.get_instance_user_name(node)
+                if user_name != node_user_name:
+                    continue
+
                 # Get the creation time of the instance
                 creation_time_str = node.extra.get('creationTimestamp')  # GCP
                 if creation_time_str:

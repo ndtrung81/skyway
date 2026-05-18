@@ -915,6 +915,7 @@ class AWS(Cloud):
 
     def get_running_cost(self, verbose=True):
         instances = self.get_instances()
+        user_name = os.environ['USER']
 
         nodes = []
         total_cost = 0.0
@@ -924,6 +925,10 @@ class AWS(Cloud):
                 continue
 
             if instance.state['Name'] == 'running':
+                instance_user_name = self.get_instance_user_name(instance)
+                if user_name != instance_user_name:
+                    continue
+
                 running_time = datetime.now(timezone.utc) - instance.launch_time
                 instance_unit_cost = self.get_unit_price_instance(instance)
                 running_cost = running_time.seconds/3600.0 * instance_unit_cost

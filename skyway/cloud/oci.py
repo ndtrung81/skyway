@@ -899,6 +899,7 @@ class OCI(Cloud):
 
     def get_running_cost(self, verbose=True):
         instances = self.get_instances()
+        user_name = os.environ['USER']
 
         nodes = []
         total_cost = 0.0
@@ -908,6 +909,10 @@ class OCI(Cloud):
                 continue
 
             if instance.lifecycle_state == 'RUNNING':
+                node_user_name = self.get_instance_user_name(instance)
+                if user_name != node_user_name:
+                    continue
+
                 launch_time_str = instance.time_created.strftime("%Y-%m-%dT%H:%M:%S.%f%z")
                 running_time = datetime.now(timezone.utc) - instance.time_created
                 instance_unit_cost = self.get_unit_price_instance(instance)
