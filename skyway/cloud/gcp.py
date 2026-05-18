@@ -586,6 +586,7 @@ class GCP(Cloud):
                 if self.post_boot_script != "":
                     script_file = os.environ['SKYWAYROOT'] + "/etc/accounts/" + self.post_boot_script
                     script_cmd = utils.script2cmd(script_file)
+                    host = node.public_ips[0]
                     cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} '{script_cmd}' "
                     p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
 
