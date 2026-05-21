@@ -597,7 +597,12 @@ class OCI(Cloud):
                 )
 
                 time.sleep(30)
+
+                # make sure to shutdown the instance after the walltime (in minutes)
                 public_ip_address = self.get_host_ip(instance.id)
+                cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{public_ip_address} 'sudo shutdown -P +{walltime_in_minutes}' "
+                p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+
                 print(f'\nInstance {instance.name} is up.')
                 print("To connect to the instance, run:")
                 print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{public_ip_address} or")

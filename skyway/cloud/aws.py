@@ -601,9 +601,15 @@ class AWS(Cloud):
 
                 node_name = self.get_instance_name(instance)
                 time.sleep(30)
+
+                # make sure to shutdown the instance after the walltime (in minutes)
+                host = instance.public_ip_address
+                cmd = f"ssh -t -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} 'sudo shutdown -P +{walltime_in_minutes}' "
+                p = subprocess.run(cmd, shell=True, text=True, capture_output=True)
+
                 print(f'\nInstance {node_name} is up.')
                 print("To connect to the instance, run:")
-                print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{instance.public_ip_address} or")
+                print(f"  ssh -i {self.my_ssh_private_key} -o StrictHostKeyChecking=accept-new {user_name}@{host} or")
                 print(f"  skyway_connect --account={self.account_name} -J {instance_name}")
 
     def check_valid_user(self, user_name, verbose=False):

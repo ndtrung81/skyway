@@ -112,3 +112,5 @@ if __name__ == "__main__":
             headers = ['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance']
 
             print(df)
+
+    print("NOTE: The usage and balance reported do not include the cost of running instances.")
