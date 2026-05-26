@@ -380,10 +380,11 @@ class GCP(Cloud):
                 projected_running_cost = running_time.seconds/3600.0 * instance_unit_cost
                 usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
                 end_time = creation_time + running_time
+                end_time_str = end_time.strftime('%Y-%m-%dT%H:%M:%S.%f%z')
 
                 # store the record into the database
                 data = [user_name, node.id, node.size,
-                        creation_time_str, end_time, projected_running_cost, remaining_balance]
+                        creation_time_str, end_time_str, projected_running_cost, remaining_balance]
 
                 if os.path.isfile(self.usage_history):
                     df = pd.read_pickle(self.usage_history)
@@ -511,8 +512,10 @@ class GCP(Cloud):
                 running_cost = running_time.seconds/3600.0 * instance_unit_cost
                 usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
 
+                current_time_str = current_time.strftime('%Y-%m-%dT%H:%M:%S.%f%z')
+
                 # store the record into the database
-                data = [node_user_name, node.id, node.size, creation_time, current_time, running_cost, remaining_balance]
+                data = [node_user_name, node.id, node.size, creation_time, current_time_str, running_cost, remaining_balance]
 
                 if os.path.isfile(self.usage_history):
                     df = pd.read_pickle(self.usage_history)
@@ -525,7 +528,7 @@ class GCP(Cloud):
                     # since restart_nodes() prepends to the database with instance ID every time
                     # finds the first row with instance ID to set the end time
                     first_found_idx = df[df['InstanceID'] == node.id].index[0]
-                    df.loc[first_found_idx, 'End'] = current_time
+                    df.loc[first_found_idx, 'End'] = current_time_str
                 df.to_pickle(self.usage_history)
 
     def restart_nodes(self, IDs=[], node_names=[], need_confirmation=True, walltime = None):
@@ -577,10 +580,13 @@ class GCP(Cloud):
 
                 self.driver.wait_until_running([node])
 
-                # record node_type, creation time
+                # creation time is the first time the instance was created
                 creation_time_str = node.extra.get('creationTimestamp')
-                #print(f"Creation timestamp: {creation_time_str}")
                 creation_time = datetime.strptime(creation_time_str, '%Y-%m-%dT%H:%M:%S.%f%z')
+
+                # for restarting a node, let's use current_time for start time
+                current_time = datetime.now(timezone.utc)
+                current_time_str = current_time.strftime('%Y-%m-%dT%H:%M:%S.%f%z')               
 
                 time.sleep(30)
 
@@ -608,10 +614,11 @@ class GCP(Cloud):
                 projected_running_cost = running_time.seconds/3600.0 * instance_unit_cost
                 usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
                 end_time = creation_time + running_time
+                end_time_str = end_time.strftime('%Y-%m-%dT%H:%M:%S.%f%z')
 
                 # store the record into the database
                 data = [user_name, node.id, node.size,
-                        creation_time_str, end_time, projected_running_cost, remaining_balance]
+                        current_time_str, end_time_str, projected_running_cost, remaining_balance]
 
                 if os.path.isfile(self.usage_history):
                     df = pd.read_pickle(self.usage_history)
@@ -734,8 +741,10 @@ class GCP(Cloud):
                 running_cost = running_time.seconds/3600.0 * instance_unit_cost
                 usage, remaining_balance = self.get_cost_and_usage_from_db(user_name=user_name)
 
+                current_time_str = current_time.strftime('%Y-%m-%dT%H:%M:%S.%f%z')
+
                 # store the record into the database
-                data = [node_user_name, node.id, node.size, creation_time, current_time, running_cost, remaining_balance]
+                data = [node_user_name, node.id, node.size, creation_time, current_time_str, running_cost, remaining_balance]
 
                 if os.path.isfile(self.usage_history):
                     df = pd.read_pickle(self.usage_history)
@@ -748,7 +757,7 @@ class GCP(Cloud):
                     # since restart_nodes() prepends to the database with instance ID every time
                     # finds the first row with instance ID to set the end time
                     first_found_idx = df[df['InstanceID'] == node.id].index[0]
-                    df.loc[first_found_idx, 'End'] = current_time
+                    df.loc[first_found_idx, 'End'] = current_time_str
 
                 df.to_pickle(self.usage_history)
 
