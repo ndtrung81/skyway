@@ -471,8 +471,8 @@ class GCP(Cloud):
 
     def stop_nodes(self, IDs=[], node_names=[], need_confirmation=True):
         '''
-        stop all the nodes (instances) given the list of node names
-        NOTE: should store the running cost and time before terminating the node(s)
+        stop all the nodes (instances) given the list of node names or IDs
+        NOTE: should store the running cost and time before stopping the node(s)
         node_names = list of node names as strings
         '''
         if isinstance(node_names, str): node_names = [node_names]
@@ -522,7 +522,10 @@ class GCP(Cloud):
                 if node.id not in df['InstanceID'].values:
                     df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
                 else:
-                    df.loc[df['InstanceID'] == node.id, 'End'] = current_time
+                    # since restart_nodes() prepends to the database with instance ID every time
+                    # finds the first row with instance ID to set the end time
+                    first_found_idx = df[df['InstanceID'] == node.id].index[0]
+                    df.loc[first_found_idx, 'End'] = current_time
                 df.to_pickle(self.usage_history)
 
     def restart_nodes(self, IDs=[], node_names=[], need_confirmation=True, walltime = None):
@@ -615,6 +618,8 @@ class GCP(Cloud):
                 else:
                     df = pd.DataFrame([], columns=['User','InstanceID','InstanceType','Start','End', 'Cost', 'Balance'])
 
+                # prepend the database with the new session of this instance ID
+                # meaning that there are duplicated instance IDs in the database (intentionally)
                 df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
                 df.to_pickle(self.usage_history)
 
@@ -740,7 +745,11 @@ class GCP(Cloud):
                 if node.id not in df['InstanceID'].values:
                     df = pd.concat([pd.DataFrame([data], columns=df.columns), df], ignore_index=True)
                 else:
-                    df.loc[df['InstanceID'] == node.id, 'End'] = current_time
+                    # since restart_nodes() prepends to the database with instance ID every time
+                    # finds the first row with instance ID to set the end time
+                    first_found_idx = df[df['InstanceID'] == node.id].index[0]
+                    df.loc[first_found_idx, 'End'] = current_time
+
                 df.to_pickle(self.usage_history)
 
    
