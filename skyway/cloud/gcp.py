@@ -585,7 +585,8 @@ class GCP(Cloud):
                 creation_time = datetime.strptime(creation_time_str, '%Y-%m-%dT%H:%M:%S.%f%z')
 
                 # for restarting a node, let's use current_time for start time
-                current_time = datetime.now(timezone.utc)
+                local_tz = datetime.now().astimezone().tzinfo
+                current_time = datetime.now(local_tz)
                 current_time_str = current_time.strftime('%Y-%m-%dT%H:%M:%S.%f%z')               
 
                 time.sleep(30)
